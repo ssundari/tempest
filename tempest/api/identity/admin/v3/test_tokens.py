@@ -16,14 +16,17 @@
 import six
 
 from tempest.api.identity import base
-from tempest.common.utils import data_utils
+from tempest import config
+from tempest.lib.common.utils import data_utils
+from tempest.lib import decorators
 from tempest.lib import exceptions as lib_exc
-from tempest import test
+
+CONF = config.CONF
 
 
 class TokensV3TestJSON(base.BaseIdentityV3AdminTest):
 
-    @test.idempotent_id('0f9f5a5f-d5cd-4a86-8a5b-c5ded151f212')
+    @decorators.idempotent_id('0f9f5a5f-d5cd-4a86-8a5b-c5ded151f212')
     def test_tokens(self):
         # Valid user's token is authenticated
         # Create a User
@@ -49,7 +52,7 @@ class TokensV3TestJSON(base.BaseIdentityV3AdminTest):
         self.assertRaises(lib_exc.NotFound, self.client.show_token,
                           subject_token)
 
-    @test.idempotent_id('565fa210-1da1-4563-999b-f7b5b67cf112')
+    @decorators.idempotent_id('565fa210-1da1-4563-999b-f7b5b67cf112')
     def test_rescope_token(self):
         """Rescope a token.
 
@@ -150,3 +153,34 @@ class TokensV3TestJSON(base.BaseIdentityV3AdminTest):
                          token_auth['token']['project']['id'])
         self.assertEqual(project2['name'],
                          token_auth['token']['project']['name'])
+
+    @decorators.idempotent_id('08ed85ce-2ba8-4864-b442-bcc61f16ae89')
+    def test_get_available_project_scopes(self):
+        manager_project_id = self.manager.credentials.project_id
+        admin_user_id = self.os_adm.credentials.user_id
+        admin_role_id = self.get_role_by_name(CONF.identity.admin_role)['id']
+
+        # Grant the user the role on both projects.
+        self.roles_client.create_user_role_on_project(
+            manager_project_id, admin_user_id, admin_role_id)
+        self.addCleanup(
+            self.roles_client.delete_role_from_user_on_project,
+            manager_project_id, admin_user_id, admin_role_id)
+
+        assigned_project_ids = [self.os_adm.credentials.project_id,
+                                manager_project_id]
+
+        # Get available project scopes
+        available_projects =\
+            self.client.list_auth_projects()['projects']
+
+        # create list to save fetched project's id
+        fetched_project_ids = [i['id'] for i in available_projects]
+
+        # verifying the project ids in list
+        missing_project_ids = \
+            [p for p in assigned_project_ids
+             if p not in fetched_project_ids]
+        self.assertEmpty(missing_project_ids,
+                         "Failed to find project_id %s in fetched list" %
+                         ', '.join(missing_project_ids))

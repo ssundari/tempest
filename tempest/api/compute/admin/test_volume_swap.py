@@ -13,6 +13,7 @@
 from tempest.api.compute import base
 from tempest.common import waiters
 from tempest import config
+from tempest.lib import decorators
 from tempest import test
 
 CONF = config.CONF
@@ -29,6 +30,9 @@ class TestVolumeSwap(base.BaseV2ComputeAdminTest):
     5. Swap volume from "volume1" to "volume2" as admin.
     6. Check the swap volume is successful and "volume2"
        is attached to "instance1" and "volume1" is in available state.
+    7. Swap volume from "volume2" to "volume1" as admin.
+    8. Check the swap volume is successful and "volume1"
+       is attached to "instance1" and "volume2" is in available state.
     """
 
     @classmethod
@@ -37,13 +41,7 @@ class TestVolumeSwap(base.BaseV2ComputeAdminTest):
         if not CONF.compute_feature_enabled.swap_volume:
             raise cls.skipException("Swapping volumes is not supported.")
 
-    @classmethod
-    def setup_clients(cls):
-        super(TestVolumeSwap, cls).setup_clients()
-        # We need the admin client for performing the update (swap) volume call
-        cls.servers_admin_client = cls.os_adm.servers_client
-
-    @test.idempotent_id('1769f00d-a693-4d67-a631-6a3496773813')
+    @decorators.idempotent_id('1769f00d-a693-4d67-a631-6a3496773813')
     @test.services('volume')
     def test_volume_swap(self):
         # Create two volumes.
@@ -57,19 +55,27 @@ class TestVolumeSwap(base.BaseV2ComputeAdminTest):
         # Attach "volume1" to server
         self.attach_volume(server, volume1)
         # Swap volume from "volume1" to "volume2"
-        self.servers_admin_client.update_attached_volume(
+        self.admin_servers_client.update_attached_volume(
             server['id'], volume1['id'], volumeId=volume2['id'])
-        waiters.wait_for_volume_status(self.volumes_client,
-                                       volume1['id'], 'available')
-        waiters.wait_for_volume_status(self.volumes_client,
-                                       volume2['id'], 'in-use')
-        self.addCleanup(self.servers_client.detach_volume,
-                        server['id'], volume2['id'])
+        waiters.wait_for_volume_resource_status(self.volumes_client,
+                                                volume1['id'], 'available')
+        waiters.wait_for_volume_resource_status(self.volumes_client,
+                                                volume2['id'], 'in-use')
         # Verify "volume2" is attached to the server
         vol_attachments = self.servers_client.list_volume_attachments(
             server['id'])['volumeAttachments']
         self.assertEqual(1, len(vol_attachments))
         self.assertIn(volume2['id'], vol_attachments[0]['volumeId'])
 
-        # TODO(mriedem): Test swapping back from volume2 to volume1 after
-        # nova bug 1490236 is fixed.
+        # Swap volume from "volume2" to "volume1"
+        self.admin_servers_client.update_attached_volume(
+            server['id'], volume2['id'], volumeId=volume1['id'])
+        waiters.wait_for_volume_resource_status(self.volumes_client,
+                                                volume2['id'], 'available')
+        waiters.wait_for_volume_resource_status(self.volumes_client,
+                                                volume1['id'], 'in-use')
+        # Verify "volume1" is attached to the server
+        vol_attachments = self.servers_client.list_volume_attachments(
+            server['id'])['volumeAttachments']
+        self.assertEqual(1, len(vol_attachments))
+        self.assertIn(volume1['id'], vol_attachments[0]['volumeId'])

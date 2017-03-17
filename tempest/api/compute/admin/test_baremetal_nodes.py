@@ -14,6 +14,7 @@
 
 from tempest.api.compute import base
 from tempest import config
+from tempest.lib import decorators
 from tempest import test
 
 CONF = config.CONF
@@ -32,11 +33,11 @@ class BaremetalNodesAdminTestJSON(base.BaseV2ComputeAdminTest):
         cls.ironic_client = cls.os_adm.baremetal_client
 
     @test.attr(type=['baremetal'])
-    @test.idempotent_id('e475aa6e-416d-4fa4-b3af-28d5e84250fb')
+    @decorators.idempotent_id('e475aa6e-416d-4fa4-b3af-28d5e84250fb')
     def test_list_get_baremetal_nodes(self):
         # Create some test nodes in Ironic directly
         test_nodes = []
-        for i in range(0, 3):
+        for _ in range(0, 3):
             _, node = self.ironic_client.create_node()
             test_nodes.append(node)
             self.addCleanup(self.ironic_client.delete_node, node['uuid'])

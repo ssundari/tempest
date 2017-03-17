@@ -14,8 +14,9 @@ import netaddr
 from oslo_log import log as logging
 
 from tempest.api.orchestration import base
-from tempest.common.utils import data_utils
 from tempest import config
+from tempest.lib.common.utils import data_utils
+from tempest.lib import decorators
 from tempest.lib import exceptions
 from tempest import test
 
@@ -28,8 +29,6 @@ class NeutronResourcesTestJSON(base.BaseOrchestrationTest):
 
     @classmethod
     def skip_checks(cls):
-        msg = "Skipped until Bug: 1547261 is resolved."
-        raise cls.skipException(msg)
         super(NeutronResourcesTestJSON, cls).skip_checks()
         if not CONF.service_available.neutron:
             raise cls.skipException("Neutron support is required")
@@ -44,6 +43,7 @@ class NeutronResourcesTestJSON(base.BaseOrchestrationTest):
         super(NeutronResourcesTestJSON, cls).setup_clients()
         cls.subnets_client = cls.os.subnets_client
         cls.ports_client = cls.os.ports_client
+        cls.routers_client = cls.os.routers_client
 
     @classmethod
     def resource_setup(cls):
@@ -84,18 +84,21 @@ class NeutronResourcesTestJSON(base.BaseOrchestrationTest):
                 # to heat.
                 body = cls.client.show_resource(cls.stack_identifier,
                                                 'Server')
-                server_id = body['physical_resource_id']
-                LOG.debug('Console output for %s', server_id)
-                output = cls.servers_client.get_console_output(
-                    server_id)['output']
-                LOG.debug(output)
-            raise
+                server_id = body.get('physical_resource_id')
+                if server_id:
+                    LOG.debug('Console output for %s', server_id)
+                    output = cls.servers_client.get_console_output(
+                        server_id)['output']
+                    LOG.debug(output)
+                else:
+                    LOG.debug('Server resource is %s', body)
+            raise  # original exception
 
         cls.test_resources = {}
         for resource in resources:
             cls.test_resources[resource['logical_resource_id']] = resource
 
-    @test.idempotent_id('f9e2664c-bc44-4eef-98b6-495e4f9d74b3')
+    @decorators.idempotent_id('f9e2664c-bc44-4eef-98b6-495e4f9d74b3')
     def test_created_resources(self):
         """Verifies created neutron resources."""
         resources = [('Network', self.neutron_basic_template['resources'][
@@ -113,7 +116,7 @@ class NeutronResourcesTestJSON(base.BaseOrchestrationTest):
             self.assertEqual(resource_type, resource['resource_type'])
             self.assertEqual('CREATE_COMPLETE', resource['resource_status'])
 
-    @test.idempotent_id('c572b915-edb1-4e90-b196-c7199a6848c0')
+    @decorators.idempotent_id('c572b915-edb1-4e90-b196-c7199a6848c0')
     @test.services('network')
     def test_created_network(self):
         """Verifies created network."""
@@ -125,7 +128,7 @@ class NeutronResourcesTestJSON(base.BaseOrchestrationTest):
         self.assertEqual(self.neutron_basic_template['resources'][
             'Network']['properties']['name'], network['name'])
 
-    @test.idempotent_id('e8f84b96-f9d7-4684-ad5f-340203e9f2c2')
+    @decorators.idempotent_id('e8f84b96-f9d7-4684-ad5f-340203e9f2c2')
     @test.services('network')
     def test_created_subnet(self):
         """Verifies created subnet."""
@@ -143,7 +146,7 @@ class NeutronResourcesTestJSON(base.BaseOrchestrationTest):
             'Subnet']['properties']['ip_version'], subnet['ip_version'])
         self.assertEqual(str(self.subnet_cidr), subnet['cidr'])
 
-    @test.idempotent_id('96af4c7f-5069-44bc-bdcf-c0390f8a67d1')
+    @decorators.idempotent_id('96af4c7f-5069-44bc-bdcf-c0390f8a67d1')
     @test.services('network')
     def test_created_router(self):
         """Verifies created router."""
@@ -156,7 +159,7 @@ class NeutronResourcesTestJSON(base.BaseOrchestrationTest):
                          router['external_gateway_info']['network_id'])
         self.assertEqual(True, router['admin_state_up'])
 
-    @test.idempotent_id('89f605bd-153e-43ee-a0ed-9919b63423c5')
+    @decorators.idempotent_id('89f605bd-153e-43ee-a0ed-9919b63423c5')
     @test.services('network')
     def test_created_router_interface(self):
         """Verifies created router interface."""
@@ -179,7 +182,7 @@ class NeutronResourcesTestJSON(base.BaseOrchestrationTest):
         self.assertEqual(str(self.subnet_cidr.iter_hosts().next()),
                          router_interface_ip)
 
-    @test.idempotent_id('75d85316-4ac2-4c0e-a1a9-edd2148fc10e')
+    @decorators.idempotent_id('75d85316-4ac2-4c0e-a1a9-edd2148fc10e')
     @test.services('compute', 'network')
     def test_created_server(self):
         """Verifies created sever."""

@@ -16,10 +16,10 @@
 from __future__ import print_function
 
 import functools
-import logging as std_logging
 import os
 import tempfile
 
+import debtcollector.removals
 from oslo_concurrency import lockutils
 from oslo_config import cfg
 from oslo_log import log as logging
@@ -133,7 +133,7 @@ IdentityGroup = [
     cfg.StrOpt('uri_v3',
                help='Full URI of the OpenStack Identity API (Keystone), v3'),
     cfg.StrOpt('auth_version',
-               default='v2',
+               default='v3',
                help="Identity API version to be used for authentication "
                     "for API tests."),
     cfg.StrOpt('region',
@@ -220,8 +220,18 @@ IdentityFeatureGroup = [
     # TODO(rodrigods): Remove the reseller flag when Kilo and Liberty is end
     # of life.
     cfg.BoolOpt('reseller',
+                default=True,
+                help='Does the environment support reseller?',
+                deprecated_for_removal=True,
+                deprecated_reason="All supported version of OpenStack now "
+                                  "supports the 'reseller' feature"),
+    # TODO(rodrigods): This is a feature flag for bug 1590578 which is fixed
+    # in Newton and Ocata. This option can be removed after Mitaka is end of
+    # life.
+    cfg.BoolOpt('forbid_global_implied_dsr',
                 default=False,
-                help='Does the environment support reseller?'),
+                help='Does the environment forbid global roles implying '
+                     'domain specific ones?'),
     cfg.BoolOpt('security_compliance',
                 default=False,
                 help='Does the environment have the security compliance '
@@ -308,8 +318,7 @@ ComputeGroup = [
                     "min_microversion and max_microversion. "
                     "If both values are not specified, Tempest avoids tests "
                     "which require a microversion. Valid values are string "
-                    "with format 'X.Y' or string 'latest'",
-                    deprecated_group='compute-feature-enabled'),
+                    "with format 'X.Y' or string 'latest'"),
     cfg.StrOpt('max_microversion',
                default=None,
                help="Upper version of the test target microversion range. "
@@ -318,8 +327,7 @@ ComputeGroup = [
                     "min_microversion and max_microversion. "
                     "If both values are not specified, Tempest avoids tests "
                     "which require a microversion. Valid values are string "
-                    "with format 'X.Y' or string 'latest'",
-                    deprecated_group='compute-feature-enabled'),
+                    "with format 'X.Y' or string 'latest'"),
 ]
 
 compute_features_group = cfg.OptGroup(name='compute-feature-enabled',
@@ -329,9 +337,12 @@ ComputeFeaturesGroup = [
     # NOTE(mriedem): This is a feature toggle for bug 1175464 which is fixed in
     # mitaka and newton. This option can be removed after liberty-eol.
     cfg.BoolOpt('allow_port_security_disabled',
-                default=False,
+                default=True,
                 help='Does the test environment support creating ports in a '
-                     'network where port security is disabled?'),
+                     'network where port security is disabled?',
+                deprecated_for_removal=True,
+                deprecated_reason='This config switch was added for Liberty '
+                                  'which is not supported anymore.'),
     cfg.BoolOpt('disk_config',
                 default=True,
                 help="If false, skip disk config tests"),
@@ -503,10 +514,20 @@ image_feature_group = cfg.OptGroup(name='image-feature-enabled',
 ImageFeaturesGroup = [
     cfg.BoolOpt('api_v2',
                 default=True,
-                help="Is the v2 image API enabled"),
+                help="Is the v2 image API enabled",
+                deprecated_for_removal=True,
+                deprecated_reason='Glance v1 APIs are deprecated and v2 APIs '
+                                  'are current one. In future, Tempest will '
+                                  'test v2 APIs only so this config option '
+                                  'will be removed.'),
     cfg.BoolOpt('api_v1',
                 default=True,
-                help="Is the v1 image API enabled"),
+                help="Is the v1 image API enabled",
+                deprecated_for_removal=True,
+                deprecated_reason='Glance v1 APIs are deprecated and v2 APIs '
+                                  'are current one. In future, Tempest will '
+                                  'test v2 APIs only so this config option '
+                                  'will be removed.'),
     cfg.BoolOpt('deactivate_image',
                 default=False,
                 help="Is the deactivate-image feature enabled."
@@ -532,23 +553,18 @@ NetworkGroup = [
                         'publicURL', 'adminURL', 'internalURL'],
                help="The endpoint type to use for the network service."),
     cfg.StrOpt('project_network_cidr',
-               deprecated_name='tenant_network_cidr',
                default="10.100.0.0/16",
                help="The cidr block to allocate project ipv4 subnets from"),
     cfg.IntOpt('project_network_mask_bits',
-               deprecated_name='tenant_network_mask_bits',
                default=28,
                help="The mask bits for project ipv4 subnets"),
     cfg.StrOpt('project_network_v6_cidr',
-               deprecated_name='tenant_network_v6_cidr',
                default="2003::/48",
                help="The cidr block to allocate project ipv6 subnets from"),
     cfg.IntOpt('project_network_v6_mask_bits',
-               deprecated_name='tenant_network_v6_mask_bits',
                default=64,
                help="The mask bits for project ipv6 subnets"),
     cfg.BoolOpt('project_networks_reachable',
-                deprecated_name='tenant_networks_reachable',
                 default=False,
                 help="Whether project networks can be reached directly from "
                      "the test client. This must be set to True when the "
@@ -650,17 +666,13 @@ ValidationGroup = [
                choices=['fixed', 'floating'],
                help='Default IP type used for validation: '
                     '-fixed: uses the first IP belonging to the fixed network '
-                    '-floating: creates and uses a floating IP',
-               deprecated_opts=[cfg.DeprecatedOpt('use_floatingip_for_ssh',
-                                                  group='compute')]),
+                    '-floating: creates and uses a floating IP'),
     cfg.StrOpt('auth_method',
                default='keypair',
                choices=['keypair'],
                help='Default authentication method to the instance. '
                     'Only ssh via keypair is supported for now. '
-                    'Additional methods will be handled in a separate spec.',
-               deprecated_opts=[cfg.DeprecatedOpt('ssh_auth_method',
-                                                  group='compute')]),
+                    'Additional methods will be handled in a separate spec.'),
     cfg.IntOpt('ip_version_for_ssh',
                default=4,
                help='Default IP version for ssh connections.'),
@@ -687,35 +699,25 @@ ValidationGroup = [
                                                   group='scenario')]),
     cfg.StrOpt('image_ssh_password',
                default="password",
-               help="Password used to authenticate to an instance.",
-               deprecated_opts=[cfg.DeprecatedOpt('image_ssh_password',
-                                                  group='compute')]),
+               help="Password used to authenticate to an instance."),
     cfg.StrOpt('ssh_shell_prologue',
                default="set -eu -o pipefail; PATH=$$PATH:/sbin;",
                help="Shell fragments to use before executing a command "
-                    "when sshing to a guest.",
-               deprecated_opts=[cfg.DeprecatedOpt('ssh_shell_prologue',
-                                                  group='compute')]),
+                    "when sshing to a guest."),
     cfg.IntOpt('ping_size',
                default=56,
                help="The packet size for ping packets originating "
-                    "from remote linux hosts",
-               deprecated_opts=[cfg.DeprecatedOpt('ping_size',
-                                                  group='compute')]),
+                    "from remote linux hosts"),
     cfg.IntOpt('ping_count',
                default=1,
                help="The number of ping packets originating from remote "
-                    "linux hosts",
-               deprecated_opts=[cfg.DeprecatedOpt('ping_count',
-                                                  group='compute')]),
+                    "linux hosts"),
     cfg.StrOpt('floating_ip_range',
                default='10.0.0.0/29',
                help='Unallocated floating IP range, which will be used to '
                     'test the floating IP bulk feature for CRUD operation. '
                     'This block must not overlap an existing floating IP '
-                    'pool.',
-               deprecated_opts=[cfg.DeprecatedOpt('floating_ip_range',
-                                                  group='compute')]),
+                    'pool.'),
     cfg.StrOpt('network_for_ssh',
                default='public',
                help="Network used for SSH connections. Ignored if "
@@ -801,6 +803,9 @@ VolumeFeaturesGroup = [
     cfg.BoolOpt('clone',
                 default=True,
                 help='Runs Cinder volume clone test'),
+    cfg.BoolOpt('manage_snapshot',
+                default=False,
+                help='Runs Cinder manage snapshot tests'),
     cfg.ListOpt('api_extensions',
                 default=['all'],
                 help='A list of enabled volume extensions with a special '
@@ -814,11 +819,7 @@ VolumeFeaturesGroup = [
                 help="Is the v2 volume API enabled"),
     cfg.BoolOpt('api_v3',
                 default=False,
-                help="Is the v3 volume API enabled"),
-    # TODO(ynesenenko): Remove volume_services once liberty-eol happens.
-    cfg.BoolOpt('volume_services',
-                default=False,
-                help='Extract correct host info from host@backend')
+                help="Is the v3 volume API enabled")
 ]
 
 
@@ -993,9 +994,6 @@ ServiceAvailableGroup = [
     cfg.BoolOpt('heat',
                 default=False,
                 help="Whether or not Heat is expected to be available"),
-    cfg.BoolOpt('sahara',
-                default=False,
-                help="Whether or not Sahara is expected to be available"),
 ]
 
 debug_group = cfg.OptGroup(name="debug",
@@ -1024,39 +1022,18 @@ specify .* as the regex.
 """)
 ]
 
-input_scenario_group = cfg.OptGroup(name="input-scenario",
-                                    title="Filters and values for"
-                                          " input scenarios[DEPRECATED]")
-
-
-InputScenarioGroup = [
-    cfg.StrOpt('image_regex',
-               default='^cirros-0.3.1-x86_64-uec$',
-               help="Matching images become parameters for scenario tests",
-               deprecated_for_removal=True),
-    cfg.StrOpt('flavor_regex',
-               default='^m1.nano$',
-               help="Matching flavors become parameters for scenario tests",
-               deprecated_for_removal=True),
-    cfg.StrOpt('non_ssh_image_regex',
-               default='^.*[Ww]in.*$',
-               help="SSH verification in tests is skipped"
-                    "for matching images",
-               deprecated_for_removal=True),
-    cfg.StrOpt('ssh_user_regex',
-               default="[[\"^.*[Cc]irros.*$\", \"cirros\"]]",
-               help="List of user mapped to regex "
-                    "to matching image names.",
-               deprecated_for_removal=True),
-]
-
 DefaultGroup = [
     cfg.StrOpt('resources_prefix',
                default='tempest',
                help="Prefix to be added when generating the name for "
                     "test resources. It can be used to discover all "
                     "resources associated with a specific test run when "
-                    "running tempest on a real-life cloud"),
+                    "running tempest on a real-life cloud",
+               deprecated_for_removal=True,
+               deprecated_reason="It is enough to add 'tempest' as this "
+                                 "prefix to ideintify resources which are "
+                                 "created by Tempest and no projects set "
+                                 "this option on OpenStack dev community."),
 ]
 
 _opts = [
@@ -1079,7 +1056,6 @@ _opts = [
     (scenario_group, ScenarioGroup),
     (service_available_group, ServiceAvailableGroup),
     (debug_group, DebugGroup),
-    (input_scenario_group, InputScenarioGroup),
     (None, DefaultGroup)
 ]
 
@@ -1121,6 +1097,12 @@ class TempestConfigPrivate(object):
         return getattr(_CONF, attr)
 
     def _set_attrs(self):
+        # This methods ensures that config options in Tempest as well as
+        # in Tempest plugins can be accessed via:
+        #     CONF.<normalised_group_name>.<key_name>
+        # where:
+        #     normalised_group_name = group_name.replace('-', '_')
+        # Attributes are set at __init__ time *only* for known option groups
         self.auth = _CONF.auth
         self.compute = _CONF.compute
         self.compute_feature_enabled = _CONF['compute-feature-enabled']
@@ -1141,8 +1123,24 @@ class TempestConfigPrivate(object):
         self.scenario = _CONF.scenario
         self.service_available = _CONF.service_available
         self.debug = _CONF.debug
-        self.input_scenario = _CONF['input-scenario']
         logging.tempest_set_log_file('tempest.log')
+        # Setting attributes for plugins
+        # NOTE(andreaf) Plugins have no access to the TempestConfigPrivate
+        # instance at discovery time, so they have no way of setting these
+        # aliases themselves.
+        ext_plugins = plugins.TempestTestPluginManager()
+        for group, _ in ext_plugins.get_plugin_options_list():
+            if isinstance(group, cfg.OptGroup):
+                # If we have an OptGroup
+                group_name = group.name
+                group_dest = group.dest
+            else:
+                # If we have a group name as a string
+                group_name = group
+                group_dest = group.replace('-', '_')
+            # NOTE(andreaf) We can set the attribute safely here since in
+            # case of name conflict we would not have reached this point.
+            setattr(self, group_dest, _CONF[group_name])
 
     def __init__(self, parse_conf=True, config_path=None):
         """Initialize a configuration from a conf directory and conf file."""
@@ -1183,11 +1181,11 @@ class TempestConfigPrivate(object):
 
         logging.setup(_CONF, 'tempest')
         LOG = logging.getLogger('tempest')
-        LOG.info("Using tempest config file %s" % path)
+        LOG.info("Using tempest config file %s", path)
         register_opts()
         self._set_attrs()
         if parse_conf:
-            _CONF.log_opt_values(LOG, std_logging.DEBUG)
+            _CONF.log_opt_values(LOG, logging.DEBUG)
 
 
 class TempestConfigProxy(object):
@@ -1195,14 +1193,14 @@ class TempestConfigProxy(object):
     _path = None
 
     _extra_log_defaults = [
-        ('paramiko.transport', std_logging.INFO),
-        ('requests.packages.urllib3.connectionpool', std_logging.WARN),
+        ('paramiko.transport', logging.INFO),
+        ('requests.packages.urllib3.connectionpool', logging.WARN),
     ]
 
     def _fix_log_levels(self):
         """Tweak the oslo log defaults."""
         for name, level in self._extra_log_defaults:
-            std_logging.getLogger(name).setLevel(level)
+            logging.getLogger(name).logger.setLevel(level)
 
     def __getattr__(self, attr):
         if not self._config:
@@ -1220,6 +1218,12 @@ class TempestConfigProxy(object):
             # loaded, options registered, and _config is set.
             _register_tempest_service_clients()
 
+            # Registering service clients and pushing their configuration to
+            # the service clients register. Doing this in the config module
+            # ensures that the configuration is available by the time we
+            # discover tests from plugins.
+            plugins.TempestTestPluginManager()._register_service_clients()
+
         return getattr(self._config, attr)
 
     def set_config_path(self, path):
@@ -1229,6 +1233,8 @@ class TempestConfigProxy(object):
 CONF = TempestConfigProxy()
 
 
+@debtcollector.removals.remove(
+    message='use testtools.skipUnless instead', removal_version='Queens')
 def skip_unless_config(*args):
     """Decorator to raise a skip if a config opt doesn't exist or is False
 
@@ -1267,6 +1273,8 @@ def skip_unless_config(*args):
     return decorator
 
 
+@debtcollector.removals.remove(
+    message='use testtools.skipIf instead', removal_version='Queens')
 def skip_if_config(*args):
     """Raise a skipException if a config exists and is True
 

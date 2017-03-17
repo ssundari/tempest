@@ -12,9 +12,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import fixtures
 import time
 
+import fixtures
 from oslo_config import cfg
 from oslotest import mockpatch
 
@@ -67,16 +67,6 @@ class TestRemoteClient(base.TestCase):
         self.ssh_mock = self.useFixture(mockpatch.PatchObject(self.conn,
                                                               'ssh_client'))
 
-    def test_get_hostname(self):
-        self.ssh_mock.mock.exec_command.return_value = 'fake_hostname'
-        self.assertEqual(self.conn.get_hostname(), 'fake_hostname')
-
-    def test_get_ram_size(self):
-        free_output = "Mem:         48294      45738       2555          0" \
-                      "402      40346"
-        self.ssh_mock.mock.exec_command.return_value = free_output
-        self.assertEqual(self.conn.get_ram_size_in_mb(), '48294')
-
     def test_write_to_console_regular_str(self):
         self.conn.write_to_console('test')
         self._assert_exec_called_with(
@@ -101,11 +91,6 @@ class TestRemoteClient(base.TestCase):
     def _assert_exec_called_with(self, cmd):
         cmd = "set -eu -o pipefail; PATH=$PATH:/sbin; " + cmd
         self.ssh_mock.mock.exec_command.assert_called_with(cmd)
-
-    def test_get_number_of_vcpus(self):
-        self.ssh_mock.mock.exec_command.return_value = '16'
-        self.assertEqual(self.conn.get_number_of_vcpus(), 16)
-        self._assert_exec_called_with('grep -c ^processor /proc/cpuinfo')
 
     def test_get_disks(self):
         output_lsblk = """\
@@ -154,23 +139,6 @@ a0:b0:c0:d0:e0:f0"""
         self._assert_exec_called_with(
             "ip addr | awk '/ether/ {print $2}'")
 
-    def test_get_ip_list(self):
-        ips = """1: lo: <LOOPBACK,UP,LOWER_UP> mtu 16436 qdisc noqueue
-    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-    inet 127.0.0.1/8 scope host lo
-    inet6 ::1/128 scope host
-       valid_lft forever preferred_lft forever
-2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast qlen 1000
-    link/ether fa:16:3e:6e:26:3b brd ff:ff:ff:ff:ff:ff
-    inet 10.0.0.4/24 brd 10.0.0.255 scope global eth0
-    inet6 fd55:faaf:e1ab:3d9:f816:3eff:fe6e:263b/64 scope global dynamic
-       valid_lft 2591936sec preferred_lft 604736sec
-    inet6 fe80::f816:3eff:fe6e:263b/64 scope link
-       valid_lft forever preferred_lft forever"""
-        self.ssh_mock.mock.exec_command.return_value = ips
-        self.assertEqual(self.conn.get_ip_list(), ips)
-        self._assert_exec_called_with('ip address')
-
     def test_assign_static_ip(self):
         self.ssh_mock.mock.exec_command.return_value = ''
         ip = '10.0.0.2'
@@ -214,7 +182,7 @@ class TestRemoteClientWithServer(base.TestCase):
                                            user='user',
                                            password='pass')))
         self.log = self.useFixture(fixtures.FakeLogger(
-            name='tempest.common.utils.linux.remote_client',
+            name='tempest.lib.common.utils.linux.remote_client',
             level='DEBUG'))
 
     def test_validate_debug_ssh_console(self):

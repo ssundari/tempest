@@ -14,10 +14,11 @@
 #    under the License.
 
 from tempest.api.volume import base
-from tempest.common.utils import data_utils
 from tempest.common import waiters
 from tempest import config
+from tempest.lib.common.utils import data_utils
 from tempest.lib.common.utils import test_utils
+from tempest.lib import decorators
 from tempest.lib import exceptions
 from tempest import test
 
@@ -48,7 +49,7 @@ class VolumesV2ActionsTest(base.BaseVolumeTest):
         # Create a test shared volume for attach/detach tests
         cls.volume = cls.create_volume()
 
-    @test.idempotent_id('fff42874-7db5-4487-a8e1-ddda5fb5288d')
+    @decorators.idempotent_id('fff42874-7db5-4487-a8e1-ddda5fb5288d')
     @test.attr(type='smoke')
     @test.services('compute')
     def test_attach_detach_volume_to_instance(self):
@@ -59,13 +60,13 @@ class VolumesV2ActionsTest(base.BaseVolumeTest):
                                   instance_uuid=server['id'],
                                   mountpoint='/dev/%s' %
                                              CONF.compute.volume_device_name)
-        waiters.wait_for_volume_status(self.client,
-                                       self.volume['id'], 'in-use')
+        waiters.wait_for_volume_resource_status(self.client,
+                                                self.volume['id'], 'in-use')
         self.client.detach_volume(self.volume['id'])
-        waiters.wait_for_volume_status(self.client,
-                                       self.volume['id'], 'available')
+        waiters.wait_for_volume_resource_status(self.client,
+                                                self.volume['id'], 'available')
 
-    @test.idempotent_id('63e21b4c-0a0c-41f6-bfc3-7c2816815599')
+    @decorators.idempotent_id('63e21b4c-0a0c-41f6-bfc3-7c2816815599')
     def test_volume_bootable(self):
         # Verify that a volume bootable flag is retrieved
         for bool_bootable in [True, False]:
@@ -80,7 +81,7 @@ class VolumesV2ActionsTest(base.BaseVolumeTest):
             self.assertEqual(str(bool_bootable).lower(),
                              fetched_volume['bootable'])
 
-    @test.idempotent_id('9516a2c8-9135-488c-8dd6-5677a7e5f371')
+    @decorators.idempotent_id('9516a2c8-9135-488c-8dd6-5677a7e5f371')
     @test.services('compute')
     def test_get_volume_attachment(self):
         # Create a server
@@ -90,11 +91,10 @@ class VolumesV2ActionsTest(base.BaseVolumeTest):
                                   instance_uuid=server['id'],
                                   mountpoint='/dev/%s' %
                                              CONF.compute.volume_device_name)
-        waiters.wait_for_volume_status(self.client,
-                                       self.volume['id'], 'in-use')
-        self.addCleanup(waiters.wait_for_volume_status, self.client,
-                        self.volume['id'],
-                        'available')
+        waiters.wait_for_volume_resource_status(self.client, self.volume['id'],
+                                                'in-use')
+        self.addCleanup(waiters.wait_for_volume_resource_status, self.client,
+                        self.volume['id'], 'available')
         self.addCleanup(self.client.detach_volume, self.volume['id'])
         volume = self.client.show_volume(self.volume['id'])['volume']
         self.assertIn('attachments', volume)
@@ -107,7 +107,7 @@ class VolumesV2ActionsTest(base.BaseVolumeTest):
         self.assertEqual(self.volume['id'], attachment['id'])
         self.assertEqual(self.volume['id'], attachment['volume_id'])
 
-    @test.idempotent_id('d8f1ca95-3d5b-44a3-b8ca-909691c9532d')
+    @decorators.idempotent_id('d8f1ca95-3d5b-44a3-b8ca-909691c9532d')
     @test.services('image')
     def test_volume_upload(self):
         # NOTE(gfidente): the volume uploaded in Glance comes from setUpClass,
@@ -123,10 +123,10 @@ class VolumesV2ActionsTest(base.BaseVolumeTest):
                         self.image_client.delete_image,
                         image_id)
         waiters.wait_for_image_status(self.image_client, image_id, 'active')
-        waiters.wait_for_volume_status(self.client,
-                                       self.volume['id'], 'available')
+        waiters.wait_for_volume_resource_status(self.client,
+                                                self.volume['id'], 'available')
 
-    @test.idempotent_id('92c4ef64-51b2-40c0-9f7e-4749fbaaba33')
+    @decorators.idempotent_id('92c4ef64-51b2-40c0-9f7e-4749fbaaba33')
     def test_reserve_unreserve_volume(self):
         # Mark volume as reserved.
         body = self.client.reserve_volume(self.volume['id'])
@@ -139,7 +139,7 @@ class VolumesV2ActionsTest(base.BaseVolumeTest):
         body = self.client.show_volume(self.volume['id'])['volume']
         self.assertIn('available', body['status'])
 
-    @test.idempotent_id('fff74e1e-5bd3-4b33-9ea9-24c103bc3f59')
+    @decorators.idempotent_id('fff74e1e-5bd3-4b33-9ea9-24c103bc3f59')
     def test_volume_readonly_update(self):
         for readonly in [True, False]:
             # Update volume readonly

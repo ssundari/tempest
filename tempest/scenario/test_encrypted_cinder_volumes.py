@@ -14,6 +14,7 @@
 #    under the License.
 
 from tempest import config
+from tempest.lib import decorators
 from tempest.scenario import manager
 from tempest import test
 
@@ -45,9 +46,7 @@ class TestEncryptedCinderVolumes(manager.EncryptionScenarioTest):
         image = self.glance_image_create()
         keypair = self.create_keypair()
 
-        return self.create_server(image_id=image,
-                                  key_name=keypair['name'],
-                                  wait_until='ACTIVE')
+        return self.create_server(image_id=image, key_name=keypair['name'])
 
     def create_encrypted_volume(self, encryption_provider, volume_type):
         volume_type = self.create_volume_type(name=volume_type)
@@ -62,7 +61,8 @@ class TestEncryptedCinderVolumes(manager.EncryptionScenarioTest):
         attached_volume = self.nova_volume_attach(server, volume)
         self.nova_volume_detach(server, attached_volume)
 
-    @test.idempotent_id('79165fb4-5534-4b9d-8429-97ccffb8f86e')
+    @decorators.idempotent_id('79165fb4-5534-4b9d-8429-97ccffb8f86e')
+    @test.attr(type='slow')
     @test.services('compute', 'volume', 'image')
     def test_encrypted_cinder_volumes_luks(self):
         server = self.launch_instance()
@@ -71,7 +71,8 @@ class TestEncryptedCinderVolumes(manager.EncryptionScenarioTest):
                                               volume_type='luks')
         self.attach_detach_volume(server, volume)
 
-    @test.idempotent_id('cbc752ed-b716-4717-910f-956cce965722')
+    @decorators.idempotent_id('cbc752ed-b716-4717-910f-956cce965722')
+    @test.attr(type='slow')
     @test.services('compute', 'volume', 'image')
     def test_encrypted_cinder_volumes_cryptsetup(self):
         server = self.launch_instance()

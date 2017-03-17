@@ -16,7 +16,6 @@
 
 import collections
 import email.utils
-import logging as real_logging
 import re
 import time
 
@@ -24,8 +23,10 @@ import jsonschema
 from oslo_log import log as logging
 from oslo_serialization import jsonutils as json
 import six
+from six.moves import urllib
 
 from tempest.lib.common import http
+from tempest.lib.common import jsonschema_validator
 from tempest.lib.common.utils import test_utils
 from tempest.lib import exceptions
 
@@ -39,8 +40,8 @@ HTTP_SUCCESS = (200, 201, 202, 203, 204, 205, 206, 207)
 HTTP_REDIRECTION = (300, 301, 302, 303, 304, 305, 306, 307)
 
 # JSON Schema validator and format checker used for JSON Schema validation
-JSONSCHEMA_VALIDATOR = jsonschema.Draft4Validator
-FORMAT_CHECKER = jsonschema.draft4_format_checker
+JSONSCHEMA_VALIDATOR = jsonschema_validator.JSONSCHEMA_VALIDATOR
+FORMAT_CHECKER = jsonschema_validator.FORMAT_CHECKER
 
 
 class RestClient(object):
@@ -248,8 +249,8 @@ class RestClient(object):
         # NOTE(afazekas): the http status code above 400 is processed by
         # the _error_checker method
         if read_code < 400:
-            pattern = """Unexpected http success status code {0},
-                         The expected status code is {1}"""
+            pattern = ("Unexpected http success status code {0}, "
+                       "The expected status code is {1}")
             if ((not isinstance(expected_code, list) and
                  (read_code != expected_code)) or
                 (isinstance(expected_code, list) and
@@ -406,8 +407,8 @@ class RestClient(object):
     def _log_request_start(self, method, req_url):
         caller_name = test_utils.find_test_caller()
         if self.trace_requests and re.search(self.trace_requests, caller_name):
-            self.LOG.debug('Starting Request (%s): %s %s' %
-                           (caller_name, method, req_url))
+            self.LOG.debug('Starting Request (%s): %s %s', caller_name,
+                           method, req_url)
 
     def _log_request_full(self, resp, req_headers=None, req_body=None,
                           resp_body=None, extra=None):
@@ -423,11 +424,11 @@ class RestClient(object):
         Body: %s"""
 
         self.LOG.debug(
-            log_fmt % (
-                str(req_headers),
-                self._safe_body(req_body),
-                str(resp_log),
-                self._safe_body(resp_body)),
+            log_fmt,
+            str(req_headers),
+            self._safe_body(req_body),
+            str(resp_log),
+            self._safe_body(resp_body),
             extra=extra)
 
     def _log_request(self, method, req_url, resp,
@@ -445,17 +446,17 @@ class RestClient(object):
         if secs:
             secs = " %.3fs" % secs
         self.LOG.info(
-            'Request (%s): %s %s %s%s' % (
-                caller_name,
-                resp['status'],
-                method,
-                req_url,
-                secs),
+            'Request (%s): %s %s %s%s',
+            caller_name,
+            resp['status'],
+            method,
+            req_url,
+            secs,
             extra=extra)
 
         # Also look everything at DEBUG if you want to filter this
         # out, don't run at debug.
-        if self.LOG.isEnabledFor(real_logging.DEBUG):
+        if self.LOG.isEnabledFor(logging.DEBUG):
             self._log_request_full(resp, req_headers, req_body,
                                    resp_body, extra)
 
@@ -617,6 +618,7 @@ class RestClient(object):
         :raises BadRequest: If a 400 response code is received
         :raises Gone: If a 410 response code is received
         :raises Conflict: If a 409 response code is received
+        :raises PreconditionFailed: If a 412 response code is received
         :raises OverLimit: If a 413 response code is received and over_limit is
                           not in the response body
         :raises RateLimitExceeded: If a 413 response code is received and
@@ -730,12 +732,21 @@ class RestClient(object):
         if resp.status < 400:
             return
 
-        JSON_ENC = ['application/json', 'application/json; charset=utf-8']
+        # NOTE(zhipengh): There is a purposefully duplicate of content-type
+        # with the only difference is with or without spaces, as specified
+        # in RFC7231.
+        JSON_ENC = ['application/json', 'application/json; charset=utf-8',
+                    'application/json;charset=utf-8']
+
         # NOTE(mtreinish): This is for compatibility with Glance and swift
         # APIs. These are the return content types that Glance api v1
         # (and occasionally swift) are using.
+        # NOTE(zhipengh): There is a purposefully duplicate of content-type
+        # with the only difference is with or without spaces, as specified
+        # in RFC7231.
         TXT_ENC = ['text/plain', 'text/html', 'text/html; charset=utf-8',
-                   'text/plain; charset=utf-8']
+                   'text/plain; charset=utf-8', 'text/html;charset=utf-8',
+                   'text/plain;charset=utf-8']
 
         if ctype.lower() in JSON_ENC:
             parse_resp = True
@@ -774,6 +785,11 @@ class RestClient(object):
             if parse_resp:
                 resp_body = self._parse_resp(resp_body)
             raise exceptions.Conflict(resp_body, resp=resp)
+
+        if resp.status == 412:
+            if parse_resp:
+                resp_body = self._parse_resp(resp_body)
+            raise exceptions.PreconditionFailed(resp_body, resp=resp)
 
         if resp.status == 413:
             if parse_resp:
@@ -908,6 +924,16 @@ class RestClient(object):
                 except jsonschema.ValidationError as ex:
                     msg = ("HTTP response header is invalid (%s)" % ex)
                     raise exceptions.InvalidHTTPResponseHeader(msg)
+
+    def _get_base_version_url(self):
+        # TODO(oomichi): This method can be used for auth's replace_version().
+        # So it is nice to have common logic for the maintenance.
+        endpoint = self.base_url
+        url = urllib.parse.urlsplit(endpoint)
+        new_path = re.split(r'(^|/)+v\d+(\.\d+)?', url.path)[0]
+        url = list(url)
+        url[2] = new_path + '/'
+        return urllib.parse.urlunsplit(url)
 
 
 class ResponseBody(dict):

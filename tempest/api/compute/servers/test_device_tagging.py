@@ -17,10 +17,11 @@ import json
 from oslo_log import log as logging
 
 from tempest.api.compute import base
-from tempest.common.utils import data_utils
 from tempest.common.utils.linux import remote_client
-from tempest.common import waiters
 from tempest import config
+from tempest.lib.common.utils import data_utils
+from tempest.lib.common.utils import test_utils
+from tempest.lib import decorators
 from tempest.lib import exceptions
 from tempest import test
 
@@ -33,7 +34,11 @@ LOG = logging.getLogger(__name__)
 class DeviceTaggingTest(base.BaseV2ComputeTest):
 
     min_microversion = '2.32'
-    max_microversion = 'latest'
+    # NOTE(mriedem): max_version looks odd but it's actually correct. Due to a
+    # bug in the 2.32 microversion, tags on block devices only worked with the
+    # 2.32 microversion specifically. And tags on networks only worked between
+    # 2.32 and 2.36 inclusive; the 2.37 microversion broke tags for networks.
+    max_microversion = '2.32'
 
     @classmethod
     def skip_checks(cls):
@@ -84,7 +89,7 @@ class DeviceTaggingTest(base.BaseV2ComputeTest):
                                               'net-2-100', 'net-2-200',
                                               'boot', 'other'])
 
-    @test.idempotent_id('a2e65a6c-66f1-4442-aaa8-498c31778d96')
+    @decorators.idempotent_id('a2e65a6c-66f1-4442-aaa8-498c31778d96')
     @test.services('network', 'volume', 'image')
     def test_device_tagging(self):
         # Create volumes
@@ -196,9 +201,7 @@ class DeviceTaggingTest(base.BaseV2ComputeTest):
                 }
             ])
 
-        self.addCleanup(waiters.wait_for_server_termination,
-                        self.servers_client, server['id'])
-        self.addCleanup(self.servers_client.delete_server, server['id'])
+        self.addCleanup(self.delete_server, server['id'])
 
         self.ssh_client = remote_client.RemoteClient(
             self.get_server_ip(server),
@@ -247,9 +250,9 @@ class DeviceTaggingTest(base.BaseV2ComputeTest):
                 self.verify_device_metadata(md_json)
                 return True
 
-            if not test.call_until_true(get_and_verify_metadata,
-                                        CONF.compute.build_timeout,
-                                        CONF.compute.build_interval):
+            if not test_utils.call_until_true(get_and_verify_metadata,
+                                              CONF.compute.build_timeout,
+                                              CONF.compute.build_interval):
                 raise exceptions.TimeoutException('Timeout while verifying '
                                                   'metadata on server.')
 
@@ -264,3 +267,8 @@ class DeviceTaggingTest(base.BaseV2ComputeTest):
             cmd_md = 'sudo cat /mnt/openstack/latest/meta_data.json'
             md_json = self.ssh_client.exec_command(cmd_md)
             self.verify_device_metadata(md_json)
+
+
+class DeviceTaggingTestV2_42(DeviceTaggingTest):
+    min_microversion = '2.42'
+    max_microversion = 'latest'

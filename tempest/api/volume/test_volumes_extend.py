@@ -15,22 +15,22 @@
 
 from tempest.api.volume import base
 from tempest.common import waiters
-from tempest import test
+from tempest.lib import decorators
 
 
 class VolumesV2ExtendTest(base.BaseVolumeTest):
 
-    @test.idempotent_id('9a36df71-a257-43a5-9555-dc7c88e66e0e')
+    @decorators.idempotent_id('9a36df71-a257-43a5-9555-dc7c88e66e0e')
     def test_volume_extend(self):
         # Extend Volume Test.
-        self.volume = self.create_volume()
-        extend_size = int(self.volume['size']) + 1
-        self.volumes_client.extend_volume(self.volume['id'],
+        volume = self.create_volume()
+        extend_size = volume['size'] + 1
+        self.volumes_client.extend_volume(volume['id'],
                                           new_size=extend_size)
-        waiters.wait_for_volume_status(self.volumes_client,
-                                       self.volume['id'], 'available')
-        volume = self.volumes_client.show_volume(self.volume['id'])['volume']
-        self.assertEqual(int(volume['size']), extend_size)
+        waiters.wait_for_volume_resource_status(self.volumes_client,
+                                                volume['id'], 'available')
+        volume = self.volumes_client.show_volume(volume['id'])['volume']
+        self.assertEqual(volume['size'], extend_size)
 
 
 class VolumesV1ExtendTest(VolumesV2ExtendTest):

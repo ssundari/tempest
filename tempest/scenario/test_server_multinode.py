@@ -15,6 +15,7 @@
 
 
 from tempest import config
+from tempest.lib import decorators
 from tempest.lib import exceptions
 from tempest.scenario import manager
 from tempest import test
@@ -43,7 +44,7 @@ class TestServerMultinode(manager.ScenarioTest):
         # scheduler hint, which is admin_only by default
         cls.servers_client = cls.admin_manager.servers_client
 
-    @test.idempotent_id('9cecbe35-b9d4-48da-a37e-7ce70aa43d30')
+    @decorators.idempotent_id('9cecbe35-b9d4-48da-a37e-7ce70aa43d30')
     @test.attr(type='smoke')
     @test.services('compute', 'network')
     def test_schedule_to_all_nodes(self):
@@ -74,9 +75,10 @@ class TestServerMultinode(manager.ScenarioTest):
             # by getting to active state here, this means this has
             # landed on the host in question.
             inst = self.create_server(
-                availability_zone='%(zone)s:%(host_name)s' % host,
-                wait_until='ACTIVE')
+                availability_zone='%(zone)s:%(host_name)s' % host)
             server = self.servers_client.show_server(inst['id'])['server']
+            # ensure server is located on the requested host
+            self.assertEqual(host['host_name'], server['OS-EXT-SRV-ATTR:host'])
             servers.append(server)
 
         # make sure we really have the number of servers we think we should

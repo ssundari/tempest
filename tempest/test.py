@@ -31,7 +31,6 @@ import tempest.common.validation_resources as vresources
 from tempest import config
 from tempest import exceptions
 from tempest.lib.common import cred_client
-from tempest.lib.common.utils import test_utils
 from tempest.lib import decorators
 from tempest.lib import exceptions as lib_exc
 
@@ -39,7 +38,11 @@ LOG = logging.getLogger(__name__)
 
 CONF = config.CONF
 
-idempotent_id = decorators.idempotent_id
+# TODO(oomichi): This test.idempotent_id should be removed after all projects
+# switch to use decorators.idempotent_id.
+idempotent_id = debtcollector.moves.moved_function(
+    decorators.idempotent_id, 'idempotent_id', __name__,
+    version='Mitaka', removal_version='?')
 
 
 def attr(**kwargs):
@@ -156,7 +159,7 @@ def related_bug(bug, status_code=None):
                 if status_code is None or status_code == exc_status_code:
                     LOG.error('Hints: This test was made for the bug %s. '
                               'The failure could be related to '
-                              'https://launchpad.net/bugs/%s' % (bug, bug))
+                              'https://launchpad.net/bugs/%s', bug, bug)
                 raise exc
         return wrapper
     return decorator
@@ -219,7 +222,6 @@ class BaseTestCase(testtools.testcase.WithAttributes,
     """
 
     setUpClassCalled = False
-    _service = None
 
     # NOTE(andreaf) credentials holds a list of the credentials to be allocated
     # at class setup time. Credential types can be 'primary', 'alt', 'admin' or
@@ -263,8 +265,8 @@ class BaseTestCase(testtools.testcase.WithAttributes,
             cls.resource_setup()
         except Exception:
             etype, value, trace = sys.exc_info()
-            LOG.info("%s raised in %s.setUpClass. Invoking tearDownClass." % (
-                     etype, cls.__name__))
+            LOG.info("%s raised in %s.setUpClass. Invoking tearDownClass.",
+                     etype, cls.__name__)
             cls.tearDownClass()
             try:
                 six.reraise(etype, value, trace)
@@ -296,9 +298,9 @@ class BaseTestCase(testtools.testcase.WithAttributes,
                 # resources that were successfully setup in resource_cleanup,
                 # log AttributeError as info instead of exception.
                 if tetype is AttributeError and name == 'resources':
-                    LOG.info("tearDownClass of %s failed: %s" % (name, te))
+                    LOG.info("tearDownClass of %s failed: %s", name, te)
                 else:
-                    LOG.exception("teardown of %s failed: %s" % (name, te))
+                    LOG.exception("teardown of %s failed: %s", name, te)
                 if not etype:
                     etype, value, trace = sys_exec_info
         # If exceptions were raised during teardown, and not before, re-raise
@@ -533,8 +535,7 @@ class BaseTestCase(testtools.testcase.WithAttributes,
             else:
                 raise lib_exc.InvalidCredentials(
                     "Invalid credentials type %s" % credential_type)
-        manager = cls.client_manager(credentials=creds.credentials,
-                                     service=cls._service)
+        manager = cls.client_manager(credentials=creds.credentials)
         # NOTE(andreaf) Ensure credentials have user and project id fields.
         # It may not be the case when using pre-provisioned credentials.
         manager.auth_provider.set_auth()
@@ -642,12 +643,11 @@ class BaseTestCase(testtools.testcase.WithAttributes,
             cred_provider, networks_client, CONF.compute.fixed_network_name)
 
     def assertEmpty(self, list, msg=None):
+        if msg is None:
+            msg = "list is not empty: %s" % list
         self.assertEqual(0, len(list), msg)
 
     def assertNotEmpty(self, list, msg=None):
+        if msg is None:
+            msg = "list is empty."
         self.assertGreater(len(list), 0, msg)
-
-
-call_until_true = debtcollector.moves.moved_function(
-    test_utils.call_until_true, 'call_until_true', __name__,
-    version='Newton', removal_version='Ocata')

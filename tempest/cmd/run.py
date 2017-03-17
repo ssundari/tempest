@@ -21,7 +21,7 @@ Tempest run has several options:
 
  * **--regex/-r**: This is a selection regex like what testr uses. It will run
                    any tests that match on re.match() with the regex
- * **--smoke**: Run all the tests tagged as smoke
+ * **--smoke/-s**: Run all the tests tagged as smoke
 
 There are also the **--blacklist-file** and **--whitelist-file** options that
 let you pass a filepath to tempest run with the file format being a line
@@ -52,7 +52,7 @@ Test Execution
 There are several options to control how the tests are executed. By default
 tempest will run in parallel with a worker for each CPU present on the machine.
 If you want to adjust the number of workers use the **--concurrency** option
-and if you want to run tests serially use **--serial**
+and if you want to run tests serially use **--serial/-t**
 
 Running with Workspaces
 -----------------------
@@ -78,16 +78,26 @@ By default tempest run's output to STDOUT will be generated using the
 subunit-trace output filter. But, if you would prefer a subunit v2 stream be
 output to STDOUT use the **--subunit** flag
 
+Combining Runs
+==============
+
+There are certain situations in which you want to split a single run of tempest
+across 2 executions of tempest run. (for example to run part of the tests
+serially and others in parallel) To accomplish this but still treat the results
+as a single run you can leverage the **--combine** option which will append
+the current run's results with the previous runs.
 """
 
 import io
 import os
 import sys
+import tempfile
 import threading
 
 from cliff import command
 from os_testr import regex_builder
 from os_testr import subunit_trace
+import six
 from testrepository.commands import run_argv
 
 from tempest.cmd import init
@@ -109,6 +119,12 @@ class TempestRun(command.Command):
             return
         else:
             os.environ["TESTR_PDB"] = ""
+        # NOTE(dims): most of our .testr.conf try to test for PYTHON
+        # environment variable and fall back to "python", under python3
+        # if it does not exist. we should set it to the python3 executable
+        # to deal with this situation better for now.
+        if six.PY3 and 'PYTHON' not in os.environ:
+            os.environ['PYTHON'] = sys.executable
 
     def _create_testrepository(self):
         if not os.path.isdir('.testrepository'):
@@ -158,6 +174,12 @@ class TempestRun(command.Command):
         else:
             print("No .testr.conf file was found for local execution")
             sys.exit(2)
+        if parsed_args.combine:
+            temp_stream = tempfile.NamedTemporaryFile()
+            return_code = run_argv(['tempest', 'last', '--subunit'], sys.stdin,
+                                   temp_stream, sys.stderr)
+            if return_code > 0:
+                sys.exit(return_code)
 
         regex = self._build_regex(parsed_args)
         if parsed_args.list_tests:
@@ -166,6 +188,16 @@ class TempestRun(command.Command):
         else:
             options = self._build_options(parsed_args)
             returncode = self._run(regex, options)
+            if returncode > 0:
+                sys.exit(returncode)
+
+        if parsed_args.combine:
+            return_code = run_argv(['tempest', 'last', '--subunit'], sys.stdin,
+                                   temp_stream, sys.stderr)
+            if return_code > 0:
+                sys.exit(return_code)
+            returncode = run_argv(['tempest', 'load', temp_stream.name],
+                                  sys.stdin, sys.stdout, sys.stderr)
         sys.exit(returncode)
 
     def get_description(self):
@@ -191,7 +223,7 @@ class TempestRun(command.Command):
                             help='Configuration file to run tempest with')
         # test selection args
         regex = parser.add_mutually_exclusive_group()
-        regex.add_argument('--smoke', action='store_true',
+        regex.add_argument('--smoke', '-s', action='store_true',
                            help="Run the smoke tests only")
         regex.add_argument('--regex', '-r', default='',
                            help='A normal testr selection regex used to '
@@ -218,12 +250,16 @@ class TempestRun(command.Command):
                               action='store_true',
                               help='Run tests in parallel (this is the'
                                    ' default)')
-        parallel.add_argument('--serial', dest='parallel',
+        parallel.add_argument('--serial', '-t', dest='parallel',
                               action='store_false',
                               help='Run tests serially')
         # output args
         parser.add_argument("--subunit", action='store_true',
                             help='Enable subunit v2 output')
+        parser.add_argument("--combine", action='store_true',
+                            help='Combine the output of this run with the '
+                                 "previous run's as a combined stream in the "
+                                 "testr repository after it finish")
 
         parser.set_defaults(parallel=True)
         return parser

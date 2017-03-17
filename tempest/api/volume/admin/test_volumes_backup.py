@@ -17,10 +17,10 @@ from oslo_serialization import base64
 from oslo_serialization import jsonutils as json
 
 from tempest.api.volume import base
-from tempest.common.utils import data_utils
 from tempest.common import waiters
 from tempest import config
-from tempest import test
+from tempest.lib.common.utils import data_utils
+from tempest.lib import decorators
 
 CONF = config.CONF
 
@@ -49,7 +49,7 @@ class VolumesBackupsAdminV2Test(base.BaseVolumeAdminTest):
         backup.update(changes)
         return self._encode_backup(backup)
 
-    @test.idempotent_id('a99c54a1-dd80-4724-8a13-13bf58d4068d')
+    @decorators.idempotent_id('a99c54a1-dd80-4724-8a13-13bf58d4068d')
     def test_volume_backup_export_import(self):
         """Test backup export import functionality.
 
@@ -94,8 +94,9 @@ class VolumesBackupsAdminV2Test(base.BaseVolumeAdminTest):
         self.addCleanup(self._delete_backup, new_id)
         self.assertIn("id", import_backup)
         self.assertEqual(new_id, import_backup['id'])
-        waiters.wait_for_backup_status(self.admin_backups_client,
-                                       import_backup['id'], 'available')
+        waiters.wait_for_volume_resource_status(self.admin_backups_client,
+                                                import_backup['id'],
+                                                'available')
 
         # Verify Import Backup
         backups = self.admin_backups_client.list_backups(
@@ -108,16 +109,18 @@ class VolumesBackupsAdminV2Test(base.BaseVolumeAdminTest):
         self.addCleanup(self.admin_volume_client.delete_volume,
                         restore['volume_id'])
         self.assertEqual(backup['id'], restore['backup_id'])
-        waiters.wait_for_volume_status(self.admin_volume_client,
-                                       restore['volume_id'], 'available')
+        waiters.wait_for_volume_resource_status(self.admin_volume_client,
+                                                restore['volume_id'],
+                                                'available')
 
         # Verify if restored volume is there in volume list
         volumes = self.admin_volume_client.list_volumes()['volumes']
         self.assertIn(restore['volume_id'], [v['id'] for v in volumes])
-        waiters.wait_for_backup_status(self.admin_backups_client,
-                                       import_backup['id'], 'available')
+        waiters.wait_for_volume_resource_status(self.admin_backups_client,
+                                                import_backup['id'],
+                                                'available')
 
-    @test.idempotent_id('47a35425-a891-4e13-961c-c45deea21e94')
+    @decorators.idempotent_id('47a35425-a891-4e13-961c-c45deea21e94')
     def test_volume_backup_reset_status(self):
         # Create a volume
         volume = self.create_volume()
@@ -131,8 +134,8 @@ class VolumesBackupsAdminV2Test(base.BaseVolumeAdminTest):
         # Reset backup status to error
         self.admin_backups_client.reset_backup_status(backup_id=backup['id'],
                                                       status="error")
-        waiters.wait_for_backup_status(self.admin_backups_client,
-                                       backup['id'], 'error')
+        waiters.wait_for_volume_resource_status(self.admin_backups_client,
+                                                backup['id'], 'error')
 
 
 class VolumesBackupsAdminV1Test(VolumesBackupsAdminV2Test):

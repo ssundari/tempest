@@ -13,10 +13,13 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import testtools
+
 from tempest.common import custom_matchers
 from tempest.common import waiters
 from tempest import config
 from tempest.lib.common.utils import test_utils
+from tempest.lib import decorators
 from tempest.lib import exceptions
 from tempest.scenario import manager
 from tempest import test
@@ -91,21 +94,21 @@ class TestMinimumBasicScenario(manager.ScenarioTest):
             raise exceptions.TimeoutException(msg)
 
     def _get_floating_ip_in_server_addresses(self, floating_ip, server):
-        for network_name, addresses in server['addresses'].items():
+        for addresses in server['addresses'].values():
             for address in addresses:
                 if (address['OS-EXT-IPS:type'] == 'floating' and
                         address['addr'] == floating_ip['ip']):
                     return address
 
-    @test.idempotent_id('bdbb5441-9204-419d-a225-b4fdbfb1a1a8')
+    @decorators.idempotent_id('bdbb5441-9204-419d-a225-b4fdbfb1a1a8')
+    @testtools.skipUnless(CONF.network.public_network_id,
+                          'The public_network_id option must be specified.')
     @test.services('compute', 'volume', 'image', 'network')
     def test_minimum_basic_scenario(self):
         image = self.glance_image_create()
         keypair = self.create_keypair()
 
-        server = self.create_server(image_id=image,
-                                    key_name=keypair['name'],
-                                    wait_until='ACTIVE')
+        server = self.create_server(image_id=image, key_name=keypair['name'])
         servers = self.servers_client.list_servers()['servers']
         self.assertIn(server['id'], [x['id'] for x in servers])
 

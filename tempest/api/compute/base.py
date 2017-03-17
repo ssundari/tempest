@@ -19,11 +19,11 @@ from oslo_log import log as logging
 
 from tempest.api.compute import api_microversion_fixture
 from tempest.common import compute
-from tempest.common.utils import data_utils
 from tempest.common import waiters
 from tempest import config
 from tempest import exceptions
 from tempest.lib.common import api_version_utils
+from tempest.lib.common.utils import data_utils
 from tempest.lib.common.utils import test_utils
 from tempest.lib import exceptions as lib_exc
 import tempest.test
@@ -139,15 +139,15 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
                 test_utils.call_and_ignore_notfound_exc(
                     cls.servers_client.delete_server, server['id'])
             except Exception:
-                LOG.exception('Deleting server %s failed' % server['id'])
+                LOG.exception('Deleting server %s failed', server['id'])
 
         for server in cls.servers:
             try:
                 waiters.wait_for_server_termination(cls.servers_client,
                                                     server['id'])
             except Exception:
-                LOG.exception('Waiting for deletion of server %s failed'
-                              % server['id'])
+                LOG.exception('Waiting for deletion of server %s failed',
+                              server['id'])
 
     @classmethod
     def server_check_teardown(cls):
@@ -179,7 +179,7 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
                 test_utils.call_and_ignore_notfound_exc(
                     cls.compute_images_client.delete_image, image_id)
             except Exception:
-                LOG.exception('Exception raised deleting image %s' % image_id)
+                LOG.exception('Exception raised deleting image %s', image_id)
 
     @classmethod
     def clear_security_groups(cls):
@@ -283,7 +283,7 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
             volumes_client.wait_for_resource_deletion(volume_id)
         except lib_exc.NotFound:
             LOG.warning("Unable to delete volume '%s' since it was not found. "
-                        "Maybe it was already deleted?" % volume_id)
+                        "Maybe it was already deleted?", volume_id)
 
     @classmethod
     def prepare_instance_network(cls):
@@ -295,21 +295,41 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
     @classmethod
     def create_image_from_server(cls, server_id, **kwargs):
         """Wrapper utility that returns an image created from the server."""
-        name = data_utils.rand_name(cls.__name__ + "-image")
-        if 'name' in kwargs:
-            name = kwargs.pop('name')
+        name = kwargs.pop('name',
+                          data_utils.rand_name(cls.__name__ + "-image"))
+        wait_until = kwargs.pop('wait_until', None)
+        wait_for_server = kwargs.pop('wait_for_server', True)
 
-        image = cls.compute_images_client.create_image(server_id, name=name)
+        image = cls.compute_images_client.create_image(server_id, name=name,
+                                                       **kwargs)
         image_id = data_utils.parse_image_id(image.response['location'])
         cls.images.append(image_id)
 
-        if 'wait_until' in kwargs:
-            waiters.wait_for_image_status(cls.compute_images_client,
-                                          image_id, kwargs['wait_until'])
+        if wait_until is not None:
+            try:
+                waiters.wait_for_image_status(cls.compute_images_client,
+                                              image_id, wait_until)
+            except lib_exc.NotFound:
+                if wait_until.upper() == 'ACTIVE':
+                    # If the image is not found after create_image returned
+                    # that means the snapshot failed in nova-compute and nova
+                    # deleted the image. There should be a compute fault
+                    # recorded with the server in that case, so get the server
+                    # and dump some details.
+                    server = (
+                        cls.servers_client.show_server(server_id)['server'])
+                    if 'fault' in server:
+                        raise exceptions.SnapshotNotFoundException(
+                            server['fault'], image_id=image_id)
+                    else:
+                        raise exceptions.SnapshotNotFoundException(
+                            image_id=image_id)
+                else:
+                    raise
             image = cls.compute_images_client.show_image(image_id)['image']
 
-            if kwargs['wait_until'] == 'ACTIVE':
-                if kwargs.get('wait_for_server', True):
+            if wait_until.upper() == 'ACTIVE':
+                if wait_for_server:
                     waiters.wait_for_server_status(cls.servers_client,
                                                    server_id, 'ACTIVE')
         return image
@@ -336,7 +356,7 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
             waiters.wait_for_server_termination(cls.servers_client,
                                                 server_id)
         except Exception:
-            LOG.exception('Failed to delete server %s' % server_id)
+            LOG.exception('Failed to delete server %s', server_id)
 
     @classmethod
     def resize_server(cls, server_id, new_flavor_id, **kwargs):
@@ -392,8 +412,8 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
             kwargs['imageRef'] = image_ref
         volume = cls.volumes_client.create_volume(**kwargs)['volume']
         cls.volumes.append(volume)
-        waiters.wait_for_volume_status(cls.volumes_client,
-                                       volume['id'], 'available')
+        waiters.wait_for_volume_resource_status(cls.volumes_client,
+                                                volume['id'], 'available')
         return volume
 
     @classmethod
@@ -427,20 +447,21 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
         attach_kwargs = dict(volumeId=volume['id'])
         if device:
             attach_kwargs['device'] = device
-        self.servers_client.attach_volume(
-            server['id'], **attach_kwargs)
+        attachment = self.servers_client.attach_volume(
+            server['id'], **attach_kwargs)['volumeAttachment']
         # On teardown detach the volume and wait for it to be available. This
         # is so we don't error out when trying to delete the volume during
         # teardown.
-        self.addCleanup(waiters.wait_for_volume_status,
+        self.addCleanup(waiters.wait_for_volume_resource_status,
                         self.volumes_client, volume['id'], 'available')
         # Ignore 404s on detach in case the server is deleted or the volume
         # is already detached.
         self.addCleanup(test_utils.call_and_ignore_notfound_exc,
                         self.servers_client.detach_volume,
                         server['id'], volume['id'])
-        waiters.wait_for_volume_status(self.volumes_client,
-                                       volume['id'], 'in-use')
+        waiters.wait_for_volume_resource_status(self.volumes_client,
+                                                volume['id'], 'in-use')
+        return attachment
 
 
 class BaseV2ComputeAdminTest(BaseV2ComputeTest):
@@ -453,3 +474,18 @@ class BaseV2ComputeAdminTest(BaseV2ComputeTest):
         super(BaseV2ComputeAdminTest, cls).setup_clients()
         cls.availability_zone_admin_client = (
             cls.os_adm.availability_zone_client)
+        cls.admin_flavors_client = cls.os_adm.flavors_client
+        cls.admin_servers_client = cls.os_adm.servers_client
+
+    def create_flavor(self, ram, vcpus, disk, name=None,
+                      is_public='True', **kwargs):
+        if name is None:
+            name = data_utils.rand_name(self.__class__.__name__ + "-flavor")
+        id = kwargs.pop('id', data_utils.rand_int_id(start=1000))
+        client = self.admin_flavors_client
+        flavor = client.create_flavor(
+            ram=ram, vcpus=vcpus, disk=disk, name=name,
+            id=id, is_public=is_public, **kwargs)['flavor']
+        self.addCleanup(client.wait_for_resource_deletion, flavor['id'])
+        self.addCleanup(client.delete_flavor, flavor['id'])
+        return flavor

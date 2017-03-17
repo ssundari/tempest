@@ -1,4 +1,5 @@
 # Copyright 2015 IBM Corp.
+# Copyright 2017 AT&T Corp.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -14,6 +15,9 @@
 
 import copy
 
+import mock
+
+from tempest.lib.services.compute import base_compute_client
 from tempest.lib.services.compute import servers_client
 from tempest.tests.lib import fake_auth_provider
 from tempest.tests.lib.services import base
@@ -154,7 +158,7 @@ class TestServersClient(base.BaseServiceTest):
         "request_id": "16fb98f-46ca-475e-917e-2563e5a8cd19",
         "user_id": "16fb98f-46ca-475e-917e-2563e5a8cd12",
         "project_id": "16fb98f-46ca-475e-917e-2563e5a8cd34",
-        "start_time": "09MAR2015 11:15",
+        "start_time": "2016-10-02T10:00:00-05:00",
         "message": "fake-msg",
         "instance_uuid": "16fb98f-46ca-475e-917e-2563e5a8cd12"
     }
@@ -166,17 +170,28 @@ class TestServersClient(base.BaseServiceTest):
 
     FAKE_INSTANCE_ACTION_EVENTS = {
         "event": "fake-event",
-        "start_time": "09MAR2015 11:15",
-        "finish_time": "09MAR2015 11:15",
+        "start_time": "2016-10-02T10:00:00-05:00",
+        "finish_time": "2016-10-02T10:00:00-05:00",
         "result": "fake-result",
         "traceback": "fake-trace-back"
     }
+
+    FAKE_SECURITY_GROUPS = [{
+        "description": "default",
+        "id": "3fb26eb3-581b-4420-9963-b0879a026506",
+        "name": "default",
+        "rules": [],
+        "tenant_id": "openstack"
+    }]
 
     FAKE_INSTANCE_WITH_EVENTS = copy.deepcopy(FAKE_INSTANCE_ACTIONS)
     FAKE_INSTANCE_WITH_EVENTS['events'] = [FAKE_INSTANCE_ACTION_EVENTS]
 
     FAKE_REBUILD_SERVER = copy.deepcopy(FAKE_SERVER_GET)
     FAKE_REBUILD_SERVER['server']['adminPass'] = 'fake-admin-pass'
+
+    FAKE_TAGS = ["foo", "bar"]
+    REPLACE_FAKE_TAGS = ["baz", "qux"]
 
     server_id = FAKE_SERVER_GET['server']['id']
     network_id = 'a6b0875b-6b5d-4a5a-81eb-0c3aa62e5fdb'
@@ -186,6 +201,7 @@ class TestServersClient(base.BaseServiceTest):
         fake_auth = fake_auth_provider.FakeAuthProvider()
         self.client = servers_client.ServersClient(
             fake_auth, 'compute', 'regionOne')
+        self.addCleanup(mock.patch.stopall)
 
     def test_list_servers_with_str_body(self):
         self._test_list_servers()
@@ -1009,3 +1025,127 @@ class TestServersClient(base.BaseServiceTest):
             server_id=self.server_id,
             type='fake-console-type'
             )
+
+    def test_list_security_groups_by_server_with_str_body(self):
+        self._test_list_security_groups_by_server()
+
+    def test_list_security_groups_by_server_with_bytes_body(self):
+        self._test_list_security_groups_by_server(True)
+
+    def _test_list_security_groups_by_server(self, bytes_body=False):
+        self.check_service_client_function(
+            self.client.list_security_groups_by_server,
+            'tempest.lib.common.rest_client.RestClient.get',
+            {'security_groups': self.FAKE_SECURITY_GROUPS},
+            server_id=self.server_id,
+            )
+
+    @mock.patch.object(base_compute_client, 'COMPUTE_MICROVERSION',
+                       new_callable=mock.PropertyMock(return_value='2.26'))
+    def test_list_tags_str_body(self, _):
+        self._test_list_tags()
+
+    @mock.patch.object(base_compute_client, 'COMPUTE_MICROVERSION',
+                       new_callable=mock.PropertyMock(return_value='2.26'))
+    def test_list_tags_byte_body(self, _):
+        self._test_list_tags(bytes_body=True)
+
+    def _test_list_tags(self, bytes_body=False):
+        expected = {"tags": self.FAKE_TAGS}
+        self.check_service_client_function(
+            self.client.list_tags,
+            'tempest.lib.common.rest_client.RestClient.get',
+            expected,
+            server_id=self.server_id,
+            to_utf=bytes_body)
+
+    @mock.patch.object(base_compute_client, 'COMPUTE_MICROVERSION',
+                       new_callable=mock.PropertyMock(return_value='2.26'))
+    def test_update_all_tags_str_body(self, _):
+        self._test_update_all_tags()
+
+    @mock.patch.object(base_compute_client, 'COMPUTE_MICROVERSION',
+                       new_callable=mock.PropertyMock(return_value='2.26'))
+    def test_update_all_tags_byte_body(self, _):
+        self._test_update_all_tags(bytes_body=True)
+
+    def _test_update_all_tags(self, bytes_body=False):
+        expected = {"tags": self.REPLACE_FAKE_TAGS}
+        self.check_service_client_function(
+            self.client.update_all_tags,
+            'tempest.lib.common.rest_client.RestClient.put',
+            expected,
+            server_id=self.server_id,
+            tags=self.REPLACE_FAKE_TAGS,
+            to_utf=bytes_body)
+
+    @mock.patch.object(base_compute_client, 'COMPUTE_MICROVERSION',
+                       new_callable=mock.PropertyMock(return_value='2.26'))
+    def test_delete_all_tags(self, _):
+        self.check_service_client_function(
+            self.client.delete_all_tags,
+            'tempest.lib.common.rest_client.RestClient.delete',
+            {},
+            server_id=self.server_id,
+            status=204)
+
+    @mock.patch.object(base_compute_client, 'COMPUTE_MICROVERSION',
+                       new_callable=mock.PropertyMock(return_value='2.26'))
+    def test_check_tag_existence_str_body(self, _):
+        self._test_check_tag_existence()
+
+    @mock.patch.object(base_compute_client, 'COMPUTE_MICROVERSION',
+                       new_callable=mock.PropertyMock(return_value='2.26'))
+    def test_check_tag_existence_byte_body(self, _):
+        self._test_check_tag_existence(bytes_body=True)
+
+    def _test_check_tag_existence(self, bytes_body=False):
+        self.check_service_client_function(
+            self.client.check_tag_existence,
+            'tempest.lib.common.rest_client.RestClient.get',
+            {},
+            server_id=self.server_id,
+            tag=self.FAKE_TAGS[0],
+            status=204,
+            to_utf=bytes_body)
+
+    @mock.patch.object(base_compute_client, 'COMPUTE_MICROVERSION',
+                       new_callable=mock.PropertyMock(return_value='2.26'))
+    def test_update_tag_str_body(self, _):
+        self._test_update_tag()
+
+    @mock.patch.object(base_compute_client, 'COMPUTE_MICROVERSION',
+                       new_callable=mock.PropertyMock(return_value='2.26'))
+    def test_update_tag_byte_body(self, _):
+        self._test_update_tag(bytes_body=True)
+
+    def _test_update_tag(self, bytes_body=False):
+        self.check_service_client_function(
+            self.client.update_tag,
+            'tempest.lib.common.rest_client.RestClient.put',
+            {},
+            server_id=self.server_id,
+            tag=self.FAKE_TAGS[0],
+            status=201,
+            headers={'location': 'fake_location'},
+            to_utf=bytes_body)
+
+    @mock.patch.object(base_compute_client, 'COMPUTE_MICROVERSION',
+                       new_callable=mock.PropertyMock(return_value='2.26'))
+    def test_delete_tag_str_body(self, _):
+        self._test_delete_tag()
+
+    @mock.patch.object(base_compute_client, 'COMPUTE_MICROVERSION',
+                       new_callable=mock.PropertyMock(return_value='2.26'))
+    def test_delete_tag_byte_body(self, _):
+        self._test_delete_tag(bytes_body=True)
+
+    def _test_delete_tag(self, bytes_body=False):
+        self.check_service_client_function(
+            self.client.delete_tag,
+            'tempest.lib.common.rest_client.RestClient.delete',
+            {},
+            server_id=self.server_id,
+            tag=self.FAKE_TAGS[0],
+            status=204,
+            to_utf=bytes_body)

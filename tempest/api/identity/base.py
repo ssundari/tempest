@@ -13,8 +13,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from tempest.common.utils import data_utils
 from tempest import config
+from tempest.lib.common.utils import data_utils
+from tempest.lib.common.utils import test_utils
 import tempest.test
 
 CONF = config.CONF
@@ -67,20 +68,27 @@ class BaseIdentityTest(tempest.test.BaseTestCase):
             return role[0]
 
     def _create_test_user(self, **kwargs):
-        if kwargs['password'] is None:
+        if kwargs.get('password', None) is None:
             user_password = data_utils.rand_password()
             kwargs['password'] = user_password
         user = self.users_client.create_user(**kwargs)['user']
         # Delete the user at the end of the test
-        self.addCleanup(self.users_client.delete_user, user['id'])
+        self.addCleanup(
+            test_utils.call_and_ignore_notfound_exc,
+            self.users_client.delete_user, user['id'])
         return user
 
-    def setup_test_role(self):
+    def setup_test_role(self, domain_id=None):
         """Set up a test role."""
-        role = self.roles_client.create_role(
-            name=data_utils.rand_name('test_role'))['role']
+        params = {'name': data_utils.rand_name('test_role')}
+        if domain_id:
+            params['domain_id'] = domain_id
+
+        role = self.roles_client.create_role(**params)['role']
         # Delete the role at the end of the test
-        self.addCleanup(self.roles_client.delete_role, role['id'])
+        self.addCleanup(
+            test_utils.call_and_ignore_notfound_exc,
+            self.roles_client.delete_role, role['id'])
         return role
 
 
@@ -104,6 +112,15 @@ class BaseIdentityV2Test(BaseIdentityTest):
 class BaseIdentityV2AdminTest(BaseIdentityV2Test):
 
     credentials = ['primary', 'admin']
+
+    # NOTE(andreaf) Identity tests work with credentials, so it is safer
+    # for them to always use disposable credentials. Forcing dynamic creds
+    # on regular identity tests would be however to restrictive, since it
+    # would prevent any identity test from being executed against clouds where
+    # admin credentials are not available.
+    # Since All admin tests require admin credentials to be
+    # executed, so this will not impact the ability to execute tests.
+    force_tenant_isolation = True
 
     @classmethod
     def setup_clients(cls):
@@ -140,7 +157,9 @@ class BaseIdentityV2AdminTest(BaseIdentityV2Test):
             name=data_utils.rand_name('test_tenant'),
             description=data_utils.rand_name('desc'))['tenant']
         # Delete the tenant at the end of the test
-        self.addCleanup(self.tenants_client.delete_tenant, tenant['id'])
+        self.addCleanup(
+            test_utils.call_and_ignore_notfound_exc,
+            self.tenants_client.delete_tenant, tenant['id'])
         return tenant
 
 
@@ -159,11 +178,21 @@ class BaseIdentityV3Test(BaseIdentityTest):
         cls.non_admin_users_client = cls.os.users_v3_client
         cls.non_admin_token = cls.os.token_v3_client
         cls.non_admin_projects_client = cls.os.projects_client
+        cls.non_admin_versions_client = cls.os.identity_versions_v3_client
 
 
 class BaseIdentityV3AdminTest(BaseIdentityV3Test):
 
     credentials = ['primary', 'admin']
+
+    # NOTE(andreaf) Identity tests work with credentials, so it is safer
+    # for them to always use disposable credentials. Forcing dynamic creds
+    # on regular identity tests would be however to restrictive, since it
+    # would prevent any identity test from being executed against clouds where
+    # admin credentials are not available.
+    # Since All admin tests require admin credentials to be
+    # executed, so this will not impact the ability to execute tests.
+    force_tenant_isolation = True
 
     @classmethod
     def setup_clients(cls):
@@ -225,12 +254,16 @@ class BaseIdentityV3AdminTest(BaseIdentityV3Test):
             name=data_utils.rand_name('test_project'),
             description=data_utils.rand_name('desc'))['project']
         # Delete the project at the end of the test
-        self.addCleanup(self.projects_client.delete_project, project['id'])
+        self.addCleanup(
+            test_utils.call_and_ignore_notfound_exc,
+            self.projects_client.delete_project, project['id'])
         return project
 
     def setup_test_domain(self):
         """Set up a test domain."""
         domain = self.create_domain()
         # Delete the domain at the end of the test
-        self.addCleanup(self.delete_domain, domain['id'])
+        self.addCleanup(
+            test_utils.call_and_ignore_notfound_exc,
+            self.delete_domain, domain['id'])
         return domain

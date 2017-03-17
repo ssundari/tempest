@@ -19,7 +19,6 @@ from tempest import config
 from tempest.lib import auth
 from tempest.lib import exceptions as lib_exc
 from tempest.lib.services import clients
-from tempest.lib.services import identity
 from tempest.services import object_storage
 from tempest.services import orchestration
 
@@ -32,20 +31,11 @@ class Manager(clients.ServiceClients):
 
     default_params = config.service_client_config()
 
-    # TODO(jordanP): remove this once no Tempest plugin use that class
-    # variable.
-    default_params_with_timeout_values = {
-        'build_interval': CONF.compute.build_interval,
-        'build_timeout': CONF.compute.build_timeout
-    }
-    default_params_with_timeout_values.update(default_params)
-
-    def __init__(self, credentials, service=None, scope='project'):
+    def __init__(self, credentials, scope='project'):
         """Initialization of Manager class.
 
         Setup all services clients and make them available for tests cases.
         :param credentials: type Credentials or TestResources
-        :param service: Service name
         :param scope: default scope for tokens produced by the auth provider
         """
         _, identity_uri = get_auth_provider_class(credentials)
@@ -97,7 +87,7 @@ class Manager(clients.ServiceClients):
                         config.service_client_config(service_for_config))
             except lib_exc.UnknownServiceClient:
                 LOG.warning(
-                    'Could not load configuration for service %s' % service)
+                    'Could not load configuration for service %s', service)
 
         return configuration
 
@@ -128,9 +118,15 @@ class Manager(clients.ServiceClients):
             self.image_member_client_v2 = self.image_v2.ImageMembersClient()
             self.namespaces_client = self.image_v2.NamespacesClient()
             self.resource_types_client = self.image_v2.ResourceTypesClient()
+            self.namespace_objects_client = \
+                self.image_v2.NamespaceObjectsClient()
             self.schemas_client = self.image_v2.SchemasClient()
             self.namespace_properties_client = \
                 self.image_v2.NamespacePropertiesClient()
+            self.namespace_tags_client = \
+                self.image_v2.NamespaceTagsClient()
+            self.image_versions_client = \
+                self.image_v2.VersionsClient()
 
     def _set_compute_clients(self):
         self.agents_client = self.compute.AgentsClient()
@@ -163,6 +159,7 @@ class Manager(clients.ServiceClients):
         self.aggregates_client = self.compute.AggregatesClient()
         self.services_client = self.compute.ServicesClient()
         self.tenant_usages_client = self.compute.TenantUsagesClient()
+        self.baremetal_nodes_client = self.compute.BaremetalNodesClient()
         self.hosts_client = self.compute.HostsClient()
         self.hypervisor_client = self.compute.HypervisorClient()
         self.instance_usages_audit_log_client = (
@@ -230,21 +227,23 @@ class Manager(clients.ServiceClients):
         self.credentials_client = self.identity_v3.CredentialsClient(
             **params_v3)
         self.groups_client = self.identity_v3.GroupsClient(**params_v3)
+        self.identity_versions_v3_client = self.identity_v3.VersionsClient(
+            **params_v3)
 
         # Token clients do not use the catalog. They only need default_params.
         # They read auth_url, so they should only be set if the corresponding
         # API version is marked as enabled
         if CONF.identity_feature_enabled.api_v2:
             if CONF.identity.uri:
-                self.token_client = identity.v2.TokenClient(
-                    CONF.identity.uri, **self.default_params)
+                self.token_client = self.identity_v2.TokenClient(
+                    auth_url=CONF.identity.uri)
             else:
                 msg = 'Identity v2 API enabled, but no identity.uri set'
                 raise lib_exc.InvalidConfiguration(msg)
         if CONF.identity_feature_enabled.api_v3:
             if CONF.identity.uri_v3:
-                self.token_v3_client = identity.v3.V3TokenClient(
-                    CONF.identity.uri_v3, **self.default_params)
+                self.token_v3_client = self.identity_v3.V3TokenClient(
+                    auth_url=CONF.identity.uri_v3)
             else:
                 msg = 'Identity v3 API enabled, but no identity.uri_v3 set'
                 raise lib_exc.InvalidConfiguration(msg)
@@ -260,6 +259,7 @@ class Manager(clients.ServiceClients):
         self.encryption_types_client = self.volume_v1.EncryptionTypesClient()
         self.encryption_types_v2_client = \
             self.volume_v2.EncryptionTypesClient()
+        self.snapshot_manage_v2_client = self.volume_v2.SnapshotManageClient()
         self.snapshots_client = self.volume_v1.SnapshotsClient()
         self.snapshots_v2_client = self.volume_v2.SnapshotsClient()
         self.volumes_client = self.volume_v1.VolumesClient()

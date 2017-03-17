@@ -18,7 +18,9 @@ import re
 
 from tempest.common import waiters
 from tempest import config
+from tempest.lib.common.utils import data_utils
 from tempest.lib.common.utils import test_utils
+from tempest.lib import decorators
 from tempest.lib import exceptions
 from tempest.scenario import manager
 from tempest import test
@@ -43,8 +45,6 @@ class TestServerBasicOps(manager.ScenarioTest):
 
     def setUp(self):
         super(TestServerBasicOps, self).setUp()
-        self.image_ref = CONF.compute.image_ref
-        self.flavor_ref = CONF.compute.flavor_ref
         self.run_ssh = CONF.validation.run_validation
         self.ssh_user = CONF.validation.image_ssh_user
 
@@ -78,6 +78,14 @@ class TestServerBasicOps(manager.ScenarioTest):
                 raise exceptions.TimeoutException('Timed out while waiting to '
                                                   'verify metadata on server. '
                                                   '%s is empty.' % md_url)
+
+            # Also, test a POST
+            md_url = 'http://169.254.169.254/openstack/2013-10-17/password'
+            data = data_utils.arbitrary_string(100)
+            cmd = 'curl -X POST -d ' + data + ' ' + md_url
+            self.ssh_client.exec_command(cmd)
+            result = self.servers_client.show_password(self.instance['id'])
+            self.assertEqual(data, result['password'])
 
     def _mount_config_drive(self):
         cmd_blkid = 'blkid | grep -i config-2'
@@ -115,7 +123,7 @@ class TestServerBasicOps(manager.ScenarioTest):
             # TODO(clarkb) construct network_data from known network
             # instance info and do direct comparison.
 
-    @test.idempotent_id('7fff3fb3-91d8-4fd0-bd7d-0204f1f180ba')
+    @decorators.idempotent_id('7fff3fb3-91d8-4fd0-bd7d-0204f1f180ba')
     @test.attr(type='smoke')
     @test.services('compute', 'network')
     def test_server_basic_ops(self):
@@ -123,13 +131,10 @@ class TestServerBasicOps(manager.ScenarioTest):
         security_group = self._create_security_group()
         self.md = {'meta1': 'data1', 'meta2': 'data2', 'metaN': 'dataN'}
         self.instance = self.create_server(
-            image_id=self.image_ref,
-            flavor=self.flavor_ref,
             key_name=keypair['name'],
             security_groups=[{'name': security_group['name']}],
             config_drive=CONF.compute_feature_enabled.config_drive,
-            metadata=self.md,
-            wait_until='ACTIVE')
+            metadata=self.md)
         self.verify_ssh(keypair)
         self.verify_metadata()
         self.verify_metadata_on_config_drive()

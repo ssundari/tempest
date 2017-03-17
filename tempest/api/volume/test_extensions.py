@@ -17,7 +17,7 @@ from oslo_log import log as logging
 
 from tempest.api.volume import base
 from tempest import config
-from tempest import test
+from tempest.lib import decorators
 
 CONF = config.CONF
 
@@ -27,7 +27,7 @@ LOG = logging.getLogger(__name__)
 
 class ExtensionsV2TestJSON(base.BaseVolumeTest):
 
-    @test.idempotent_id('94607eb0-43a5-47ca-82aa-736b41bd2e2c')
+    @decorators.idempotent_id('94607eb0-43a5-47ca-82aa-736b41bd2e2c')
     def test_list_extensions(self):
         # List of all extensions
         extensions = (self.volumes_extension_client.list_extensions()
@@ -35,7 +35,7 @@ class ExtensionsV2TestJSON(base.BaseVolumeTest):
         if len(CONF.volume_feature_enabled.api_extensions) == 0:
             raise self.skipException('There are not any extensions configured')
         extension_list = [extension.get('alias') for extension in extensions]
-        LOG.debug("Cinder extensions: %s" % ','.join(extension_list))
+        LOG.debug("Cinder extensions: %s", ','.join(extension_list))
         ext = CONF.volume_feature_enabled.api_extensions[0]
         if ext == 'all':
             self.assertIn('Hosts', map(lambda x: x['name'], extensions))

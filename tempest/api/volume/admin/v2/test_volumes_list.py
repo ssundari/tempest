@@ -18,7 +18,7 @@ import operator
 from tempest.api.volume import base
 from tempest.common import waiters
 from tempest import config
-from tempest import test
+from tempest.lib import decorators
 
 CONF = config.CONF
 
@@ -32,21 +32,21 @@ class VolumesListAdminV2TestJSON(base.BaseVolumeAdminTest):
         # NOTE(zhufl): When using pre-provisioned credentials, the project
         # may have volumes other than those created below.
         cls.volume_list = cls.volumes_client.list_volumes()['volumes']
-        for i in range(3):
+        for _ in range(3):
             volume = cls.create_volume()
             # Fetch volume details
             volume_details = cls.volumes_client.show_volume(
                 volume['id'])['volume']
             cls.volume_list.append(volume_details)
 
-    @test.idempotent_id('5866286f-3290-4cfd-a414-088aa6cdc469')
+    @decorators.idempotent_id('5866286f-3290-4cfd-a414-088aa6cdc469')
     def test_volume_list_param_tenant(self):
         # Test to list volumes from single tenant
         # Create a volume in admin tenant
         adm_vol = self.admin_volume_client.create_volume(
             size=CONF.volume.volume_size)['volume']
-        waiters.wait_for_volume_status(self.admin_volume_client,
-                                       adm_vol['id'], 'available')
+        waiters.wait_for_volume_resource_status(self.admin_volume_client,
+                                                adm_vol['id'], 'available')
         self.addCleanup(self.admin_volume_client.delete_volume, adm_vol['id'])
         params = {'all_tenants': 1,
                   'project_id': self.volumes_client.tenant_id}

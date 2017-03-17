@@ -13,11 +13,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import logging
 import os
 import shlex
 import subprocess
 
+from oslo_log import log as logging
 import six
 
 from tempest.lib import base
@@ -54,7 +54,7 @@ def execute(cmd, action, flags='', params='', fail_ok=False,
     cmd = ' '.join([prefix, os.path.join(cli_dir, cmd),
                     flags, action, params])
     cmd = cmd.strip()
-    LOG.info("running: '%s'" % cmd)
+    LOG.info("running: '%s'", cmd)
     if six.PY2:
         cmd = cmd.encode('utf-8')
     cmd = shlex.split(cmd)

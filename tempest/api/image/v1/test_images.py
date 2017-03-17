@@ -17,11 +17,11 @@ import six
 
 from tempest.api.image import base
 from tempest.common import image as common_image
-from tempest.common.utils import data_utils
 from tempest.common import waiters
 from tempest import config
+from tempest.lib.common.utils import data_utils
+from tempest.lib import decorators
 from tempest.lib import exceptions
-from tempest import test
 
 CONF = config.CONF
 
@@ -30,13 +30,23 @@ def get_container_and_disk_format():
     a_formats = ['ami', 'ari', 'aki']
 
     container_format = CONF.image.container_formats[0]
-    disk_format = CONF.image.disk_formats[0]
 
-    if container_format in a_formats and container_format != disk_format:
-        msg = ("The container format and the disk format don't match. "
-               "Container format: %(container)s, Disk format: %(disk)s." %
-               {'container': container_format, 'disk': disk_format})
-        raise exceptions.InvalidConfiguration(message=msg)
+    # In v1, If container_format is one of ['ami', 'ari', 'aki'], then
+    # disk_format must be same with container_format.
+    # If they are of different item sequence in tempest.conf, such as:
+    #     container_formats = ami,ari,aki,bare
+    #     disk_formats = ari,ami,aki,vhd
+    # we can select one in disk_format list that is same with container_format.
+    if container_format in a_formats:
+        if container_format in CONF.image.disk_formats:
+            disk_format = container_format
+        else:
+            msg = ("The container format and the disk format don't match. "
+                   "Container format: %(container)s, Disk format: %(disk)s." %
+                   {'container': container_format, 'disk': disk_format})
+            raise exceptions.InvalidConfiguration(msg)
+    else:
+        disk_format = CONF.image.disk_formats[0]
 
     return container_format, disk_format
 
@@ -44,7 +54,7 @@ def get_container_and_disk_format():
 class CreateRegisterImagesTest(base.BaseV1ImageTest):
     """Here we test the registration and creation of images."""
 
-    @test.idempotent_id('3027f8e6-3492-4a11-8575-c3293017af4d')
+    @decorators.idempotent_id('3027f8e6-3492-4a11-8575-c3293017af4d')
     def test_register_then_upload(self):
         # Register, then upload an image
         properties = {'prop1': 'val1'}
@@ -54,7 +64,6 @@ class CreateRegisterImagesTest(base.BaseV1ImageTest):
                                   disk_format=disk_format,
                                   is_public=False,
                                   properties=properties)
-        self.assertIn('id', image)
         self.assertEqual('New Name', image.get('name'))
         self.assertFalse(image.get('is_public'))
         self.assertEqual('queued', image.get('status'))
@@ -67,7 +76,7 @@ class CreateRegisterImagesTest(base.BaseV1ImageTest):
         self.assertIn('size', body)
         self.assertEqual(1024, body.get('size'))
 
-    @test.idempotent_id('69da74d9-68a9-404b-9664-ff7164ccb0f5')
+    @decorators.idempotent_id('69da74d9-68a9-404b-9664-ff7164ccb0f5')
     def test_register_remote_image(self):
         # Register a new remote image
         container_format, disk_format = get_container_and_disk_format()
@@ -77,7 +86,6 @@ class CreateRegisterImagesTest(base.BaseV1ImageTest):
                                  location=CONF.image.http_image,
                                  properties={'key1': 'value1',
                                              'key2': 'value2'})
-        self.assertIn('id', body)
         self.assertEqual('New Remote Image', body.get('name'))
         self.assertFalse(body.get('is_public'))
         self.assertEqual('active', body.get('status'))
@@ -85,20 +93,19 @@ class CreateRegisterImagesTest(base.BaseV1ImageTest):
         self.assertEqual(properties['key1'], 'value1')
         self.assertEqual(properties['key2'], 'value2')
 
-    @test.idempotent_id('6d0e13a7-515b-460c-b91f-9f4793f09816')
+    @decorators.idempotent_id('6d0e13a7-515b-460c-b91f-9f4793f09816')
     def test_register_http_image(self):
         container_format, disk_format = get_container_and_disk_format()
         image = self.create_image(name='New Http Image',
                                   container_format=container_format,
                                   disk_format=disk_format, is_public=False,
                                   copy_from=CONF.image.http_image)
-        self.assertIn('id', image)
         self.assertEqual('New Http Image', image.get('name'))
         self.assertFalse(image.get('is_public'))
         waiters.wait_for_image_status(self.client, image['id'], 'active')
         self.client.show_image(image['id'])
 
-    @test.idempotent_id('05b19d55-140c-40d0-b36b-fafd774d421b')
+    @decorators.idempotent_id('05b19d55-140c-40d0-b36b-fafd774d421b')
     def test_register_image_with_min_ram(self):
         # Register an image with min ram
         container_format, disk_format = get_container_and_disk_format()
@@ -109,7 +116,6 @@ class CreateRegisterImagesTest(base.BaseV1ImageTest):
                                  is_public=False,
                                  min_ram=40,
                                  properties=properties)
-        self.assertIn('id', body)
         self.assertEqual('New_image_with_min_ram', body.get('name'))
         self.assertFalse(body.get('is_public'))
         self.assertEqual('queued', body.get('status'))
@@ -139,24 +145,24 @@ class ListImagesTest(base.BaseV1ImageTest):
         a_formats = ['ami', 'ari', 'aki']
 
         (cls.container_format,
-         cls.container_format_alt) = CONF.image.container_formats[:2]
+         container_format_alt) = CONF.image.container_formats[:2]
         cls.disk_format, cls.disk_format_alt = CONF.image.disk_formats[:2]
         if cls.container_format in a_formats:
             cls.disk_format = cls.container_format
-        if cls.container_format_alt in a_formats:
-            cls.disk_format_alt = cls.container_format_alt
+        if container_format_alt in a_formats:
+            cls.disk_format_alt = container_format_alt
 
         img1 = cls._create_remote_image('one', cls.container_format,
                                         cls.disk_format)
-        img2 = cls._create_remote_image('two', cls.container_format_alt,
+        img2 = cls._create_remote_image('two', container_format_alt,
                                         cls.disk_format_alt)
         img3 = cls._create_remote_image('dup', cls.container_format,
                                         cls.disk_format)
         img4 = cls._create_remote_image('dup', cls.container_format,
                                         cls.disk_format)
-        img5 = cls._create_standard_image('1', cls.container_format_alt,
+        img5 = cls._create_standard_image('1', container_format_alt,
                                           cls.disk_format_alt, 42)
-        img6 = cls._create_standard_image('2', cls.container_format_alt,
+        img6 = cls._create_standard_image('2', container_format_alt,
                                           cls.disk_format_alt, 142)
         img7 = cls._create_standard_image('33', cls.container_format,
                                           cls.disk_format, 142)
@@ -204,7 +210,7 @@ class ListImagesTest(base.BaseV1ImageTest):
                                  is_public=False, data=image_file)
         return image['id']
 
-    @test.idempotent_id('246178ab-3b33-4212-9a4b-a7fe8261794d')
+    @decorators.idempotent_id('246178ab-3b33-4212-9a4b-a7fe8261794d')
     def test_index_no_params(self):
         # Simple test to see all fixture images returned
         images_list = self.client.list_images()['images']
@@ -212,7 +218,7 @@ class ListImagesTest(base.BaseV1ImageTest):
         for image_id in self.created_images:
             self.assertIn(image_id, image_list)
 
-    @test.idempotent_id('f1755589-63d6-4468-b098-589820eb4031')
+    @decorators.idempotent_id('f1755589-63d6-4468-b098-589820eb4031')
     def test_index_disk_format(self):
         images_list = self.client.list_images(
             disk_format=self.disk_format_alt)['images']
@@ -223,7 +229,7 @@ class ListImagesTest(base.BaseV1ImageTest):
         self.assertFalse(self.created_set - self.same_disk_format_set
                          <= result_set)
 
-    @test.idempotent_id('2143655d-96d9-4bec-9188-8674206b4b3b')
+    @decorators.idempotent_id('2143655d-96d9-4bec-9188-8674206b4b3b')
     def test_index_container_format(self):
         images_list = self.client.list_images(
             container_format=self.container_format)['images']
@@ -234,7 +240,7 @@ class ListImagesTest(base.BaseV1ImageTest):
         self.assertFalse(self.created_set - self.same_container_format_set
                          <= result_set)
 
-    @test.idempotent_id('feb32ac6-22bb-4a16-afd8-9454bb714b14')
+    @decorators.idempotent_id('feb32ac6-22bb-4a16-afd8-9454bb714b14')
     def test_index_max_size(self):
         images_list = self.client.list_images(size_max=42)['images']
         for image in images_list:
@@ -243,7 +249,7 @@ class ListImagesTest(base.BaseV1ImageTest):
         self.assertTrue(self.size42_set <= result_set)
         self.assertFalse(self.created_set - self.size42_set <= result_set)
 
-    @test.idempotent_id('6ffc16d0-4cbf-4401-95c8-4ac63eac34d8')
+    @decorators.idempotent_id('6ffc16d0-4cbf-4401-95c8-4ac63eac34d8')
     def test_index_min_size(self):
         images_list = self.client.list_images(size_min=142)['images']
         for image in images_list:
@@ -252,7 +258,7 @@ class ListImagesTest(base.BaseV1ImageTest):
         self.assertTrue(self.size142_set <= result_set)
         self.assertFalse(self.size42_set <= result_set)
 
-    @test.idempotent_id('e5dc26d9-9aa2-48dd-bda5-748e1445da98')
+    @decorators.idempotent_id('e5dc26d9-9aa2-48dd-bda5-748e1445da98')
     def test_index_status_active_detail(self):
         images_list = self.client.list_images(detail=True,
                                               status='active',
@@ -265,7 +271,7 @@ class ListImagesTest(base.BaseV1ImageTest):
             top_size = size
             self.assertEqual(image['status'], 'active')
 
-    @test.idempotent_id('097af10a-bae8-4342-bff4-edf89969ed2a')
+    @decorators.idempotent_id('097af10a-bae8-4342-bff4-edf89969ed2a')
     def test_index_name(self):
         images_list = self.client.list_images(
             detail=True,
@@ -299,7 +305,7 @@ class UpdateImageMetaTest(base.BaseV1ImageTest):
                                  properties={'key1': 'value1'})
         return image['id']
 
-    @test.idempotent_id('01752c1c-0275-4de3-9e5b-876e44541928')
+    @decorators.idempotent_id('01752c1c-0275-4de3-9e5b-876e44541928')
     def test_list_image_metadata(self):
         # All metadata key/value pairs for an image should be returned
         resp = self.client.check_image(self.image_id)
@@ -307,7 +313,7 @@ class UpdateImageMetaTest(base.BaseV1ImageTest):
         expected = {'key1': 'value1'}
         self.assertEqual(expected, resp_metadata['properties'])
 
-    @test.idempotent_id('d6d7649c-08ce-440d-9ea7-e3dda552f33c')
+    @decorators.idempotent_id('d6d7649c-08ce-440d-9ea7-e3dda552f33c')
     def test_update_image_metadata(self):
         # The metadata for the image should match the updated values
         req_metadata = {'key1': 'alt1', 'key2': 'value2'}

@@ -15,9 +15,9 @@
 
 import netaddr
 
-from tempest.common.utils import data_utils
 from tempest import config
 from tempest import exceptions
+from tempest.lib.common.utils import data_utils
 from tempest.lib.common.utils import test_utils
 from tempest.lib import exceptions as lib_exc
 import tempest.test
@@ -108,10 +108,10 @@ class BaseNetworkTest(tempest.test.BaseTestCase):
             # Not all classes in the hierarchy have the client class variable
             if len(cls.metering_label_rules) > 0:
                 label_rules_client = cls.admin_metering_label_rules_client
-            for metering_label_rule in cls.metering_label_rules:
-                test_utils.call_and_ignore_notfound_exc(
-                    label_rules_client.delete_metering_label_rule,
-                    metering_label_rule['id'])
+                for metering_label_rule in cls.metering_label_rules:
+                    test_utils.call_and_ignore_notfound_exc(
+                        label_rules_client.delete_metering_label_rule,
+                        metering_label_rule['id'])
             # Clean up metering labels
             for metering_label in cls.metering_labels:
                 test_utils.call_and_ignore_notfound_exc(

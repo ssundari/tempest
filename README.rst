@@ -4,7 +4,6 @@ Team and repository tags
 
 .. image:: http://governance.openstack.org/badges/tempest.svg
     :target: http://governance.openstack.org/reference/tags/index.html
-    :remote:
 
 .. Change things from this point on
 
@@ -105,7 +104,7 @@ as it is simpler, and quicker to work with.
     $ tempest run
 
    from the Tempest workspace directory. Or you can use the ``--workspace``
-   argument to run in the workspace you created regarless of your current
+   argument to run in the workspace you created regardless of your current
    working directory. For example::
 
     $ tempest run --workspace cloud-01
@@ -209,15 +208,9 @@ that has python 2.7)
 Python 3.x
 ----------
 
-Starting during the Liberty release development cycle work began on enabling
-Tempest to run under both Python 2.7 and Python 3.4. Tempest strives to fully
-support running with Python 3.4 and newer. A gating unit test job was added to
-also run Tempest's unit tests under Python 3. This means that the Tempest
-code at least imports under Python 3.4 and things that have unit test coverage
-will work on Python 3.4. However, because large parts of Tempest are
-self-verifying there might be uncaught issues running on Python 3. So until
-there is a gating job which does a full Tempest run using Python 3 there
-isn't any guarantee that running Tempest under Python 3 is bug free.
+Starting during the Pike cycle Tempest has a gating CI job that runs tempest
+with Python 3. Any tempest release after 15.0.0 should fully support running
+under Python 3 as well as Python 2.7.
 
 Legacy run method
 -----------------
@@ -263,9 +256,7 @@ To run one single test serially ::
 
     $ testr run tempest.api.compute.servers.test_servers_negative.ServersNegativeTestJSON.test_reboot_non_existent_server
 
-Alternatively, you can use the run_tempest.sh script which will create a venv
-and run the tests or use tox to do the same. Tox also contains several existing
-job configurations. For example::
+Tox also contains several existing job configurations. For example::
 
     $ tox -efull
 

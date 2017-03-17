@@ -18,30 +18,97 @@ from tempest.tests.lib.services import base
 
 
 class TestRolesClient(base.BaseServiceTest):
+
+    FAKE_ROLE_ID = "1"
+    FAKE_ROLE_NAME = "test"
+    FAKE_DOMAIN_ID = "1"
+
+    FAKE_ROLE_ID_2 = "2"
+    FAKE_ROLE_NAME_2 = "test2"
+
     FAKE_ROLE_INFO = {
         "role": {
-            "domain_id": "1",
-            "id": "1",
-            "name": "test",
-            "links": "example.com"
+            "domain_id": FAKE_DOMAIN_ID,
+            "id": FAKE_ROLE_ID,
+            "name": FAKE_ROLE_NAME,
+            "links": {
+                "self": "http://example.com/identity/v3/roles/%s" % (
+                    FAKE_ROLE_ID)
+            }
         }
     }
 
-    FAKE_LIST_ROLES = {
-        "roles": [
-            {
-                "domain_id": "1",
-                "id": "1",
-                "name": "test",
-                "links": "example.com"
-            },
-            {
-                "domain_id": "2",
-                "id": "2",
-                "name": "test2",
-                "links": "example.com"
+    FAKE_ROLE_INFO_2 = {
+        "role": {
+            "domain_id": FAKE_DOMAIN_ID,
+            "id": FAKE_ROLE_ID_2,
+            "name": FAKE_ROLE_NAME_2,
+            "links": {
+                "self": "http://example.com/identity/v3/roles/%s" % (
+                    FAKE_ROLE_ID_2)
             }
-        ]
+        }
+    }
+
+    FAKE_LIST_ROLES = {"roles": [FAKE_ROLE_INFO, FAKE_ROLE_INFO_2]}
+
+    FAKE_ROLE_INFERENCE_RULE = {
+        "role_inference": {
+            "prior_role": {
+                "id": FAKE_ROLE_ID,
+                "name": FAKE_ROLE_NAME,
+                "links": {
+                    "self": "http://example.com/identity/v3/roles/%s" % (
+                        FAKE_ROLE_ID)
+                }
+            },
+            "implies": {
+                "id": FAKE_ROLE_ID_2,
+                "name": FAKE_ROLE_NAME_2,
+                "links": {
+                    "self": "http://example.com/identity/v3/roles/%s" % (
+                        FAKE_ROLE_ID_2)
+                }
+            }
+        },
+        "links": {
+            "self": "http://example.com/identity/v3/roles/"
+                    "%s/implies/%s" % (FAKE_ROLE_ID, FAKE_ROLE_ID_2)
+        }
+    }
+
+    FAKE_LIST_ROLE_INFERENCES_RULES = {
+        "role_inference": {
+            "prior_role": {
+                "id": FAKE_ROLE_ID,
+                "name": FAKE_ROLE_NAME,
+                "links": {
+                    "self": "http://example.com/identity/v3/roles/%s" % (
+                        FAKE_ROLE_ID)
+                }
+            },
+            "implies": [
+                {
+                    "id": FAKE_ROLE_ID_2,
+                    "name": FAKE_ROLE_NAME_2,
+                    "links": {
+                        "self": "http://example.com/identity/v3/roles/%s" % (
+                            FAKE_ROLE_ID_2)
+                    }
+                },
+                {
+                    "id": "3",
+                    "name": "test3",
+                    "links": {
+                        "self": "http://example.com/identity/v3/roles/3"
+                    }
+                }
+            ]
+        },
+        "links": {
+            "self": "http://example.com/identity/v3/roles/"
+                    "%s/implies" % FAKE_ROLE_ID
+        }
     }
 
     def setUp(self):
@@ -56,8 +123,8 @@ class TestRolesClient(base.BaseServiceTest):
             'tempest.lib.common.rest_client.RestClient.post',
             self.FAKE_ROLE_INFO,
             bytes_body,
-            domain_id="1",
-            name="test",
+            domain_id=self.FAKE_DOMAIN_ID,
+            name=self.FAKE_ROLE_NAME,
             status=201)
 
     def _test_show_role(self, bytes_body=False):
@@ -66,7 +133,7 @@ class TestRolesClient(base.BaseServiceTest):
             'tempest.lib.common.rest_client.RestClient.get',
             self.FAKE_ROLE_INFO,
             bytes_body,
-            role_id="1")
+            role_id=self.FAKE_ROLE_ID)
 
     def _test_list_roles(self, bytes_body=False):
         self.check_service_client_function(
@@ -81,8 +148,8 @@ class TestRolesClient(base.BaseServiceTest):
             'tempest.lib.common.rest_client.RestClient.patch',
             self.FAKE_ROLE_INFO,
             bytes_body,
-            role_id="1",
-            name="test")
+            role_id=self.FAKE_ROLE_ID,
+            name=self.FAKE_ROLE_NAME)
 
     def _test_create_user_role_on_project(self, bytes_body=False):
         self.check_service_client_function(
@@ -164,6 +231,33 @@ class TestRolesClient(base.BaseServiceTest):
             domain_id="b344506af7644f6794d9cb316600b020",
             group_id="123")
 
+    def _test_create_role_inference_rule(self, bytes_body=False):
+        self.check_service_client_function(
+            self.client.create_role_inference_rule,
+            'tempest.lib.common.rest_client.RestClient.put',
+            self.FAKE_ROLE_INFERENCE_RULE,
+            bytes_body,
+            status=201,
+            prior_role=self.FAKE_ROLE_ID,
+            implies_role=self.FAKE_ROLE_ID_2)
+
+    def _test_show_role_inference_rule(self, bytes_body=False):
+        self.check_service_client_function(
+            self.client.show_role_inference_rule,
+            'tempest.lib.common.rest_client.RestClient.get',
+            self.FAKE_ROLE_INFERENCE_RULE,
+            bytes_body,
+            prior_role=self.FAKE_ROLE_ID,
+            implies_role=self.FAKE_ROLE_ID_2)
+
+    def _test_list_role_inferences_rules(self, bytes_body=False):
+        self.check_service_client_function(
+            self.client.list_role_inferences_rules,
+            'tempest.lib.common.rest_client.RestClient.get',
+            self.FAKE_LIST_ROLE_INFERENCES_RULES,
+            bytes_body,
+            prior_role=self.FAKE_ROLE_ID)
+
     def test_create_role_with_str_body(self):
         self._test_create_role()
 
@@ -193,7 +287,7 @@ class TestRolesClient(base.BaseServiceTest):
             self.client.delete_role,
             'tempest.lib.common.rest_client.RestClient.delete',
             {},
-            role_id="1",
+            role_id=self.FAKE_ROLE_ID,
             status=204)
 
     def test_create_user_role_on_project_with_str_body(self):
@@ -311,3 +405,39 @@ class TestRolesClient(base.BaseServiceTest):
             group_id="123",
             role_id="1234",
             status=204)
+
+    def test_create_role_inference_rule_with_str_body(self):
+        self._test_create_role_inference_rule()
+
+    def test_create_role_inference_rule_with_bytes_body(self):
+        self._test_create_role_inference_rule(bytes_body=True)
+
+    def test_show_role_inference_rule_with_str_body(self):
+        self._test_show_role_inference_rule()
+
+    def test_show_role_inference_rule_with_bytes_body(self):
+        self._test_show_role_inference_rule(bytes_body=True)
+
+    def test_list_role_inferences_rules_with_str_body(self):
+        self._test_list_role_inferences_rules()
+
+    def test_list_role_inferences_rules_with_bytes_body(self):
+        self._test_list_role_inferences_rules(bytes_body=True)
+
+    def test_check_role_inference_rule(self):
+        self.check_service_client_function(
+            self.client.check_role_inference_rule,
+            'tempest.lib.common.rest_client.RestClient.head',
+            {},
+            status=204,
+            prior_role=self.FAKE_ROLE_ID,
+            implies_role=self.FAKE_ROLE_ID_2)
+
+    def test_delete_role_inference_rule(self):
+        self.check_service_client_function(
+            self.client.delete_role_inference_rule,
+            'tempest.lib.common.rest_client.RestClient.delete',
+            {},
+            status=204,
+            prior_role=self.FAKE_ROLE_ID,
+            implies_role=self.FAKE_ROLE_ID_2)

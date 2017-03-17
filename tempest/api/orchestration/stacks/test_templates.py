@@ -11,8 +11,8 @@
 #    under the License.
 
 from tempest.api.orchestration import base
-from tempest.common.utils import data_utils
-from tempest import test
+from tempest.lib.common.utils import data_utils
+from tempest.lib import decorators
 
 
 class TemplateYAMLTestJSON(base.BaseOrchestrationTest):
@@ -37,12 +37,12 @@ Resources:
         cls.stack_id = cls.stack_identifier.split('/')[1]
         cls.parameters = {}
 
-    @test.idempotent_id('47430699-c368-495e-a1db-64c26fd967d7')
+    @decorators.idempotent_id('47430699-c368-495e-a1db-64c26fd967d7')
     def test_show_template(self):
         """Getting template used to create the stack."""
         self.client.show_template(self.stack_identifier)
 
-    @test.idempotent_id('ed53debe-8727-46c5-ab58-eba6090ec4de')
+    @decorators.idempotent_id('ed53debe-8727-46c5-ab58-eba6090ec4de')
     def test_validate_template(self):
         """Validating template passing it content."""
         self.client.validate_template(self.template,

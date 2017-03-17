@@ -101,6 +101,11 @@ class Gone(ClientRestClientException):
     message = "The requested resource is no longer available"
 
 
+class PreconditionFailed(ClientRestClientException):
+    status_code = 412
+    message = "Precondition Failed"
+
+
 class RateLimitExceeded(ClientRestClientException):
     status_code = 413
     message = "Rate limit exceeded"
@@ -259,3 +264,8 @@ class PluginRegistrationException(TempestException):
 
 class VolumeBackupException(TempestException):
     message = "Volume backup %(backup_id)s failed and is in ERROR status"
+
+
+class DeleteErrorException(TempestException):
+    message = ("Resource %(resource_id)s failed to delete "
+               "and is in ERROR status")

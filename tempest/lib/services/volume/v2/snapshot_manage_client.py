@@ -1,4 +1,4 @@
-# Copyright 2014 NEC Corporation
+# Copyright 2016 Red Hat, Inc.
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -13,19 +13,21 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from tempest.api.identity import base
-from tempest import test
+from oslo_serialization import jsonutils as json
+
+from tempest.lib.common import rest_client
 
 
-class ExtensionTestJSON(base.BaseIdentityV2AdminTest):
+class SnapshotManageClient(rest_client.RestClient):
+    """Snapshot manage V2 client."""
 
-    @test.idempotent_id('85f3f661-f54c-4d48-b563-72ae952b9383')
-    def test_list_extensions(self):
-        # List all the extensions
-        body = self.non_admin_client.list_extensions()['extensions']['values']
-        self.assertNotEmpty(body)
-        keys = ['name', 'updated', 'alias', 'links',
-                'namespace', 'description']
-        for value in body:
-            for key in keys:
-                self.assertIn(key, value)
+    api_version = "v2"
+
+    def manage_snapshot(self, **kwargs):
+        """Manage a snapshot."""
+        post_body = json.dumps({'snapshot': kwargs})
+        url = 'os-snapshot-manage'
+        resp, body = self.post(url, post_body)
+        self.expected_success(202, resp.status)
+        body = json.loads(body)
+        return rest_client.ResponseBody(resp, body)

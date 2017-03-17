@@ -16,10 +16,10 @@
 import testtools
 
 from tempest.api.compute import base
-from tempest.common.utils import data_utils
 from tempest.common import waiters
 from tempest import config
-from tempest import test
+from tempest.lib.common.utils import data_utils
+from tempest.lib import decorators
 
 
 CONF = config.CONF
@@ -40,7 +40,7 @@ class VolumesSnapshotsTestJSON(base.BaseV2ComputeTest):
         cls.volumes_client = cls.volumes_extensions_client
         cls.snapshots_client = cls.snapshots_extensions_client
 
-    @test.idempotent_id('cd4ec87d-7825-450d-8040-6e2068f2da8f')
+    @decorators.idempotent_id('cd4ec87d-7825-450d-8040-6e2068f2da8f')
     @testtools.skipUnless(CONF.volume_feature_enabled.snapshot,
                           'Cinder volume snapshots are disabled')
     def test_volume_snapshot_create_get_list_delete(self):
@@ -54,9 +54,9 @@ class VolumesSnapshotsTestJSON(base.BaseV2ComputeTest):
             display_name=s_name)['snapshot']
 
         def delete_snapshot(snapshot_id):
-            waiters.wait_for_snapshot_status(self.snapshots_client,
-                                             snapshot_id,
-                                             'available')
+            waiters.wait_for_volume_resource_status(self.snapshots_client,
+                                                    snapshot_id,
+                                                    'available')
             # Delete snapshot
             self.snapshots_client.delete_snapshot(snapshot_id)
             self.snapshots_client.wait_for_resource_deletion(snapshot_id)

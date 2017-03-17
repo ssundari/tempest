@@ -10,9 +10,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from testtools import matchers
+
 from tempest.api.volume import base
-from tempest.common.utils import data_utils
 from tempest import config
+from tempest.lib.common.utils import data_utils
+from tempest.lib import decorators
 from tempest import test
 
 CONF = config.CONF
@@ -33,13 +36,7 @@ class VolumesV2SnapshotTestJSON(base.BaseVolumeTest):
         cls.name_field = cls.special_fields['name_field']
         cls.descrip_field = cls.special_fields['descrip_field']
 
-    def cleanup_snapshot(self, snapshot):
-        # Delete the snapshot
-        self.snapshots_client.delete_snapshot(snapshot['id'])
-        self.snapshots_client.wait_for_resource_deletion(snapshot['id'])
-        self.snapshots.remove(snapshot)
-
-    @test.idempotent_id('b467b54c-07a4-446d-a1cf-651dedcc3ff1')
+    @decorators.idempotent_id('b467b54c-07a4-446d-a1cf-651dedcc3ff1')
     @test.services('compute')
     def test_snapshot_create_with_volume_in_use(self):
         # Create a snapshot when volume status is in-use
@@ -51,9 +48,9 @@ class VolumesV2SnapshotTestJSON(base.BaseVolumeTest):
         snapshot = self.create_snapshot(self.volume_origin['id'],
                                         force=True)
         # Delete the snapshot
-        self.cleanup_snapshot(snapshot)
+        self.delete_snapshot(snapshot['id'])
 
-    @test.idempotent_id('8567b54c-4455-446d-a1cf-651ddeaa3ff2')
+    @decorators.idempotent_id('8567b54c-4455-446d-a1cf-651ddeaa3ff2')
     @test.services('compute')
     def test_snapshot_delete_with_volume_in_use(self):
         # Create a test instance
@@ -67,11 +64,11 @@ class VolumesV2SnapshotTestJSON(base.BaseVolumeTest):
 
         # Delete the snapshots. Some snapshot implementations can take
         # different paths according to order they are deleted.
-        self.cleanup_snapshot(snapshot1)
-        self.cleanup_snapshot(snapshot3)
-        self.cleanup_snapshot(snapshot2)
+        self.delete_snapshot(snapshot1['id'])
+        self.delete_snapshot(snapshot3['id'])
+        self.delete_snapshot(snapshot2['id'])
 
-    @test.idempotent_id('5210a1de-85a0-11e6-bb21-641c676a5d61')
+    @decorators.idempotent_id('5210a1de-85a0-11e6-bb21-641c676a5d61')
     @test.services('compute')
     def test_snapshot_create_offline_delete_online(self):
 
@@ -88,14 +85,18 @@ class VolumesV2SnapshotTestJSON(base.BaseVolumeTest):
 
         # Delete the snapshots. Some snapshot implementations can take
         # different paths according to order they are deleted.
-        self.cleanup_snapshot(snapshot3)
-        self.cleanup_snapshot(snapshot1)
-        self.cleanup_snapshot(snapshot2)
+        self.delete_snapshot(snapshot3['id'])
+        self.delete_snapshot(snapshot1['id'])
+        self.delete_snapshot(snapshot2['id'])
 
-    @test.idempotent_id('2a8abbe4-d871-46db-b049-c41f5af8216e')
+    @decorators.idempotent_id('2a8abbe4-d871-46db-b049-c41f5af8216e')
     def test_snapshot_create_get_list_update_delete(self):
-        # Create a snapshot
-        snapshot = self.create_snapshot(self.volume_origin['id'])
+        # Create a snapshot with metadata
+        metadata = {"snap-meta1": "value1",
+                    "snap-meta2": "value2",
+                    "snap-meta3": "value3"}
+        snapshot = self.create_snapshot(self.volume_origin['id'],
+                                        metadata=metadata)
 
         # Get the snap and check for some of its details
         snap_get = self.snapshots_client.show_snapshot(
@@ -103,6 +104,10 @@ class VolumesV2SnapshotTestJSON(base.BaseVolumeTest):
         self.assertEqual(self.volume_origin['id'],
                          snap_get['volume_id'],
                          "Referred volume origin mismatch")
+
+        # Verify snapshot metadata
+        self.assertThat(snap_get['metadata'].items(),
+                        matchers.ContainsAll(metadata.items()))
 
         # Compare also with the output from the list action
         tracking_data = (snapshot['id'], snapshot[self.name_field])
@@ -128,9 +133,9 @@ class VolumesV2SnapshotTestJSON(base.BaseVolumeTest):
         self.assertEqual(new_desc, updated_snapshot[self.descrip_field])
 
         # Delete the snapshot
-        self.cleanup_snapshot(snapshot)
+        self.delete_snapshot(snapshot['id'])
 
-    @test.idempotent_id('677863d1-3142-456d-b6ac-9924f667a7f4')
+    @decorators.idempotent_id('677863d1-3142-456d-b6ac-9924f667a7f4')
     def test_volume_from_snapshot(self):
         # Creates a volume a snapshot passing a size different from the source
         src_size = CONF.volume.volume_size
@@ -152,7 +157,7 @@ class VolumesV2SnapshotTestJSON(base.BaseVolumeTest):
         volume = self.volumes_client.show_volume(dst_vol['id'])['volume']
         # Should allow
         self.assertEqual(volume['snapshot_id'], src_snap['id'])
-        self.assertEqual(int(volume['size']), src_size + 1)
+        self.assertEqual(volume['size'], src_size + 1)
 
 
 class VolumesV1SnapshotTestJSON(VolumesV2SnapshotTestJSON):

@@ -38,8 +38,10 @@ In the proposal etherpad we'll be looking for answers to 3 questions
  #. The test proposed for removal has a failure rate <  0.50% in the gate over
     the past release (the value and interval will likely be adjusted in the
     future)
- #. There must not be an external user/consumer of tempest that depends on the
-    test proposed for removal
+
+    .. _`prong #3`:
+ #. There must not be an external user/consumer of tempest
+    that depends on the test proposed for removal
 
 The answers to 1 and 2 are easy to verify. For 1 just provide a link to the new
 test location. If you are linking to the tempest removal patch please also put
@@ -62,7 +64,7 @@ The Old Way using subunit2sql directly
 
 SELECT * from tests where test_id like "%test_id%";
 (where $test_id is the full test_id, but truncated to the class because of
-setupClass or tearDownClass failures)
+setUpClass or tearDownClass failures)
 
 You can access the infra mysql subunit2sql db w/ read-only permissions with:
 
@@ -80,7 +82,7 @@ you would run the following:
  #. run the query: MySQL [subunit2sql]> select * from tests where test_id like
     "tempest.api.compute.admin.test_flavors_negative.FlavorsAdminNegativeTestJSON%";
     which will return a table of all the tests in the class (but it will also
-    catch failures in setupClass and tearDownClass)
+    catch failures in setUpClass and tearDownClass)
  #. paste the output table with numbers and the mysql command you ran to
     generate it into the etherpad.
 
@@ -133,6 +135,10 @@ there are a couple of exceptions though:
  #. A revert for a patch which added a broken test, or testing which didn't
     actually run in the gate (basically any revert for something which
     shouldn't have been added)
+ #. Tests that would become out of scope as a consequence of an API change,
+    as described in `API Compatibility`_.
+    Such tests cannot live in Tempest because of the branchless nature of
+    Tempest. Such test must still honor `prong #3`_.
 
 For the first exception type the only types of testing in tree which have been
 declared out of scope at this point are:
@@ -149,7 +155,7 @@ there is equivalent testing elsewhere.
 Tempest Scope
 ^^^^^^^^^^^^^
 
-Also starting in the liberty cycle tempest has defined a set of projects which
+Starting in the liberty cycle tempest has defined a set of projects which
 are defined as in scope for direct testing in tempest. As of today that list
 is:
 
@@ -166,3 +172,17 @@ removed assuming there is equivalent testing elsewhere. Preferably using the
 to maintain continuity after migrating the tests out of tempest.
 
 .. _tempest plugin mechanism: http://docs.openstack.org/developer/tempest/plugin.html
+
+API Compatibility
+"""""""""""""""""
+
+If an API introduces a non-discoverable, backward incompatible change, and
+such change is not backported to all versions supported by Tempest, tests for
+that API cannot live in Tempest anymore.
+This is because tests would not be able to know or control which API response
+to expect, and thus would not be able to enforce a specific behavior.
+
+If a test exists in Tempest that would meet this criteria as consequence of a
+change, the test must be removed according to the procedure discussed into
+this document. The API change should not be merged until all conditions
+required for test removal can be met.

@@ -26,7 +26,7 @@ import uuid
 from oslo_utils import uuidutils
 import six.moves.urllib.parse as urlparse
 
-DECORATOR_MODULE = 'test'
+DECORATOR_MODULE = 'decorators'
 DECORATOR_NAME = 'idempotent_id'
 DECORATOR_IMPORT = 'tempest.%s' % DECORATOR_MODULE
 IMPORT_LINE = 'from tempest import %s' % DECORATOR_MODULE
@@ -117,7 +117,7 @@ class TestChecker(object):
 
     @staticmethod
     def _get_idempotent_id(test_node):
-        """Return key-value dict with all metadata from @test.idempotent_id"""
+        "Return key-value dict with metadata from @decorators.idempotent_id"
         idempotent_id = None
         for decorator in test_node.decorator_list:
             if (hasattr(decorator, 'func') and
@@ -304,7 +304,8 @@ class TestChecker(object):
         Returns true if untagged tests exist.
         """
         def report(module_name, test_name, tests):
-            error_str = "%s:%s\nmissing @test.idempotent_id('...')\n%s\n" % (
+            error_str = ("%s:%s\nmissing @decorators.idempotent_id"
+                         "('...')\n%s\n") % (
                 tests[module_name]['source_path'],
                 tests[module_name]['tests'][test_name].lineno,
                 test_name
@@ -352,9 +353,10 @@ def run():
     else:
         errors = checker.report_untagged(untagged) or errors
     if errors:
-        sys.exit("@test.idempotent_id existence and uniqueness checks failed\n"
+        sys.exit("@decorators.idempotent_id existence and uniqueness checks "
+                 "failed\n"
                  "Run 'tox -v -euuidgen' to automatically fix tests with\n"
-                 "missing @test.idempotent_id decorators.")
+                 "missing @decorators.idempotent_id decorators.")
 
 if __name__ == '__main__':
     run()

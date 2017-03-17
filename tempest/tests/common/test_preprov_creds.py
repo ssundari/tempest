@@ -14,14 +14,15 @@
 
 import hashlib
 import os
-import testtools
+import shutil
 
 import mock
+import six
+import testtools
+
 from oslo_concurrency.fixture import lockutils as lockutils_fixtures
 from oslo_config import cfg
 from oslotest import mockpatch
-import shutil
-import six
 
 from tempest.common import preprov_creds
 from tempest import config
@@ -101,7 +102,7 @@ class TestPreProvisionedCredentials(base.TestCase):
             preprov_creds.PreProvisionedCredentialProvider.HASH_CRED_FIELDS)
         for account in accounts_list:
             hash = hashlib.md5()
-            account_for_hash = dict((k, v) for (k, v) in six.iteritems(account)
+            account_for_hash = dict((k, v) for (k, v) in account.items()
                                     if k in hash_fields)
             hash.update(six.text_type(account_for_hash).encode('utf-8'))
             temp_hash = hash.hexdigest()

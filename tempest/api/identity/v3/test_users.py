@@ -20,8 +20,8 @@ import testtools
 from tempest.api.identity import base
 from tempest import config
 from tempest.lib.common.utils import data_utils
+from tempest.lib import decorators
 from tempest.lib import exceptions
-from tempest import test
 
 
 CONF = config.CONF
@@ -60,7 +60,7 @@ class IdentityV3UsersTest(base.BaseIdentityV3Test):
         if CONF.identity_feature_enabled.security_compliance:
             # First we need to clear the password history
             unique_count = CONF.identity.user_unique_last_password_count
-            for i in range(unique_count):
+            for _ in range(unique_count):
                 random_pass = data_utils.rand_password()
                 self._update_password(
                     original_password=new_pass, password=random_pass)
@@ -78,7 +78,7 @@ class IdentityV3UsersTest(base.BaseIdentityV3Test):
         time.sleep(1)
         self.non_admin_users_client.auth_provider.set_auth()
 
-    @test.idempotent_id('ad71bd23-12ad-426b-bb8b-195d2b635f27')
+    @decorators.idempotent_id('ad71bd23-12ad-426b-bb8b-195d2b635f27')
     def test_user_update_own_password(self):
         old_pass = self.creds.password
         old_token = self.non_admin_client.token
@@ -103,7 +103,7 @@ class IdentityV3UsersTest(base.BaseIdentityV3Test):
 
     @testtools.skipUnless(CONF.identity_feature_enabled.security_compliance,
                           'Security compliance not available.')
-    @test.idempotent_id('941784ee-5342-4571-959b-b80dd2cea516')
+    @decorators.idempotent_id('941784ee-5342-4571-959b-b80dd2cea516')
     def test_password_history_check_self_service_api(self):
         old_pass = self.creds.password
         new_pass1 = data_utils.rand_password()
@@ -133,7 +133,7 @@ class IdentityV3UsersTest(base.BaseIdentityV3Test):
 
     @testtools.skipUnless(CONF.identity_feature_enabled.security_compliance,
                           'Security compliance not available.')
-    @test.idempotent_id('a7ad8bbf-2cff-4520-8c1d-96332e151658')
+    @decorators.idempotent_id('a7ad8bbf-2cff-4520-8c1d-96332e151658')
     def test_user_account_lockout(self):
         password = self.creds.password
 
@@ -142,7 +142,7 @@ class IdentityV3UsersTest(base.BaseIdentityV3Test):
 
         # Lock user account by using the wrong password to login
         bad_password = data_utils.rand_password()
-        for i in range(CONF.identity.user_lockout_failure_attempts):
+        for _ in range(CONF.identity.user_lockout_failure_attempts):
             self.assertRaises(exceptions.Unauthorized,
                               self.non_admin_token.auth,
                               user_id=self.user_id,
@@ -157,4 +157,4 @@ class IdentityV3UsersTest(base.BaseIdentityV3Test):
 
         # If we wait the required time, the user account will be unlocked
         time.sleep(CONF.identity.user_lockout_duration + 1)
-        self.token.auth(user_id=self.user_id, password=password)
+        self.non_admin_token.auth(user_id=self.user_id, password=password)

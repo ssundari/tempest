@@ -15,11 +15,11 @@
 import testtools
 
 from tempest.api.compute import base
-from tempest.common.utils import data_utils
 from tempest.common import waiters
 from tempest import config
+from tempest.lib.common.utils import data_utils
+from tempest.lib import decorators
 from tempest.lib import exceptions
-from tempest import test
 
 CONF = config.CONF
 
@@ -30,15 +30,13 @@ class MigrationsAdminTest(base.BaseV2ComputeAdminTest):
     def setup_clients(cls):
         super(MigrationsAdminTest, cls).setup_clients()
         cls.client = cls.os_adm.migrations_client
-        cls.flavors_admin_client = cls.os_adm.flavors_client
-        cls.admin_servers_client = cls.os_adm.servers_client
 
-    @test.idempotent_id('75c0b83d-72a0-4cf8-a153-631e83e7d53f')
+    @decorators.idempotent_id('75c0b83d-72a0-4cf8-a153-631e83e7d53f')
     def test_list_migrations(self):
         # Admin can get the migrations list
         self.client.list_migrations()
 
-    @test.idempotent_id('1b512062-8093-438e-b47a-37d2f597cd64')
+    @decorators.idempotent_id('1b512062-8093-438e-b47a-37d2f597cd64')
     @testtools.skipUnless(CONF.compute_feature_enabled.resize,
                           'Resize not available.')
     def test_list_migrations_in_flavor_resize_situation(self):
@@ -55,12 +53,12 @@ class MigrationsAdminTest(base.BaseV2ComputeAdminTest):
 
     def _flavor_clean_up(self, flavor_id):
         try:
-            self.flavors_admin_client.delete_flavor(flavor_id)
-            self.flavors_admin_client.wait_for_resource_deletion(flavor_id)
+            self.admin_flavors_client.delete_flavor(flavor_id)
+            self.admin_flavors_client.wait_for_resource_deletion(flavor_id)
         except exceptions.NotFound:
             pass
 
-    @test.idempotent_id('33f1fec3-ba18-4470-8e4e-1d888e7c3593')
+    @decorators.idempotent_id('33f1fec3-ba18-4470-8e4e-1d888e7c3593')
     @testtools.skipUnless(CONF.compute_feature_enabled.resize,
                           'Resize not available.')
     def test_resize_server_revert_deleted_flavor(self):
@@ -69,9 +67,9 @@ class MigrationsAdminTest(base.BaseV2ComputeAdminTest):
 
         # First we have to create a flavor that we can delete so make a copy
         # of the normal flavor from which we'd create a server.
-        flavor = self.flavors_admin_client.show_flavor(
+        flavor = self.admin_flavors_client.show_flavor(
             self.flavor_ref)['flavor']
-        flavor = self.flavors_admin_client.create_flavor(
+        flavor = self.admin_flavors_client.create_flavor(
             name=data_utils.rand_name('test_resize_flavor_'),
             ram=flavor['ram'],
             disk=flavor['disk'],
@@ -127,13 +125,13 @@ class MigrationsAdminTest(base.BaseV2ComputeAdminTest):
             server['id'])['server']['OS-EXT-SRV-ATTR:host']
         assert_func(src_host, dst_host)
 
-    @test.idempotent_id('4bf0be52-3b6f-4746-9a27-3143636fe30d')
+    @decorators.idempotent_id('4bf0be52-3b6f-4746-9a27-3143636fe30d')
     @testtools.skipUnless(CONF.compute_feature_enabled.cold_migration,
                           'Cold migration not available.')
     def test_cold_migration(self):
         self._test_cold_migrate_server(revert=False)
 
-    @test.idempotent_id('caa1aa8b-f4ef-4374-be0d-95f001c2ac2d')
+    @decorators.idempotent_id('caa1aa8b-f4ef-4374-be0d-95f001c2ac2d')
     @testtools.skipUnless(CONF.compute_feature_enabled.cold_migration,
                           'Cold migration not available.')
     def test_revert_cold_migration(self):

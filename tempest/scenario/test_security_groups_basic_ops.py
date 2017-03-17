@@ -15,9 +15,10 @@
 from oslo_log import log
 import testtools
 
-from tempest.common.utils import data_utils
 from tempest.common.utils import net_info
 from tempest import config
+from tempest.lib.common.utils import data_utils
+from tempest.lib import decorators
 from tempest.scenario import manager
 from tempest import test
 
@@ -219,30 +220,36 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
         # Checks that we see the newly created network/subnet/router via
         # checking the result of list_[networks,routers,subnets]
         # Check that (router, subnet) couple exist in port_list
-        seen_nets = self._list_networks()
-        seen_names = [n['name'] for n in seen_nets]
-        seen_ids = [n['id'] for n in seen_nets]
+        seen_nets = self.admin_manager.networks_client.list_networks()
+        seen_names = [n['name'] for n in seen_nets['networks']]
+        seen_ids = [n['id'] for n in seen_nets['networks']]
 
         self.assertIn(tenant.network['name'], seen_names)
         self.assertIn(tenant.network['id'], seen_ids)
 
-        seen_subnets = [(n['id'], n['cidr'], n['network_id'])
-                        for n in self._list_subnets()]
+        seen_subnets = [
+            (n['id'], n['cidr'], n['network_id']) for n in
+            self.admin_manager.subnets_client.list_subnets()['subnets']
+        ]
         mysubnet = (tenant.subnet['id'], tenant.subnet['cidr'],
                     tenant.network['id'])
         self.assertIn(mysubnet, seen_subnets)
 
-        seen_routers = self._list_routers()
-        seen_router_ids = [n['id'] for n in seen_routers]
-        seen_router_names = [n['name'] for n in seen_routers]
+        seen_routers = self.admin_manager.routers_client.list_routers()
+        seen_router_ids = [n['id'] for n in seen_routers['routers']]
+        seen_router_names = [n['name'] for n in seen_routers['routers']]
 
         self.assertIn(tenant.router['name'], seen_router_names)
         self.assertIn(tenant.router['id'], seen_router_ids)
 
         myport = (tenant.router['id'], tenant.subnet['id'])
-        router_ports = [(i['device_id'], i['fixed_ips'][0]['subnet_id']) for i
-                        in self._list_ports()
-                        if net_info.is_router_interface_port(i)]
+        router_ports = [
+            (i['device_id'], f['subnet_id'])
+            for i in self.admin_manager.ports_client.list_ports(
+                device_id=tenant.router['id'])['ports']
+            if net_info.is_router_interface_port(i)
+            for f in i['fixed_ips']
+        ]
 
         self.assertIn(myport, router_ports)
 
@@ -262,7 +269,6 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
             networks=[{'uuid': tenant.network["id"]}],
             key_name=tenant.keypair['name'],
             security_groups=security_groups_names,
-            wait_until='ACTIVE',
             clients=tenant.manager,
             **kwargs)
         if 'security_groups' in server:
@@ -362,20 +368,12 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
             access_point_ssh, private_key=private_key)
         return access_point_ssh
 
-    def _check_connectivity(self, access_point, ip, should_succeed=True):
-        if should_succeed:
-            msg = "Timed out waiting for %s to become reachable" % ip
-        else:
-            msg = "%s is reachable" % ip
-        self.assertTrue(self._check_remote_connectivity(access_point, ip,
-                                                        should_succeed), msg)
-
     def _test_in_tenant_block(self, tenant):
         access_point_ssh = self._connect_to_access_point(tenant)
         for server in tenant.servers:
-            self._check_connectivity(access_point=access_point_ssh,
-                                     ip=self._get_server_ip(server),
-                                     should_succeed=False)
+            self.check_remote_connectivity(source=access_point_ssh,
+                                           dest=self._get_server_ip(server),
+                                           should_succeed=False)
 
     def _test_in_tenant_allow(self, tenant):
         ruleset = dict(
@@ -390,8 +388,8 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
         )
         access_point_ssh = self._connect_to_access_point(tenant)
         for server in tenant.servers:
-            self._check_connectivity(access_point=access_point_ssh,
-                                     ip=self._get_server_ip(server))
+            self.check_remote_connectivity(source=access_point_ssh,
+                                           dest=self._get_server_ip(server))
 
     def _test_cross_tenant_block(self, source_tenant, dest_tenant):
         # if public router isn't defined, then dest_tenant access is via
@@ -399,8 +397,8 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
         access_point_ssh = self._connect_to_access_point(source_tenant)
         ip = self._get_server_ip(dest_tenant.access_point,
                                  floating=self.floating_ip_access)
-        self._check_connectivity(access_point=access_point_ssh, ip=ip,
-                                 should_succeed=False)
+        self.check_remote_connectivity(source=access_point_ssh, dest=ip,
+                                       should_succeed=False)
 
     def _test_cross_tenant_allow(self, source_tenant, dest_tenant):
         """check for each direction:
@@ -421,7 +419,7 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
         access_point_ssh = self._connect_to_access_point(source_tenant)
         ip = self._get_server_ip(dest_tenant.access_point,
                                  floating=self.floating_ip_access)
-        self._check_connectivity(access_point_ssh, ip)
+        self.check_remote_connectivity(access_point_ssh, ip)
 
         # test that reverse traffic is still blocked
         self._test_cross_tenant_block(dest_tenant, source_tenant)
@@ -438,7 +436,7 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
         access_point_ssh_2 = self._connect_to_access_point(dest_tenant)
         ip = self._get_server_ip(source_tenant.access_point,
                                  floating=self.floating_ip_access)
-        self._check_connectivity(access_point_ssh_2, ip)
+        self.check_remote_connectivity(access_point_ssh_2, ip)
 
     def _verify_mac_addr(self, tenant):
         """Verify that VM has the same ip, mac as listed in port"""
@@ -448,7 +446,8 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
         mac_addr = mac_addr.strip().lower()
         # Get the fixed_ips and mac_address fields of all ports. Select
         # only those two columns to reduce the size of the response.
-        port_list = self._list_ports(fields=['fixed_ips', 'mac_address'])
+        port_list = self.admin_manager.ports_client.list_ports(
+            fields=['fixed_ips', 'mac_address'])['ports']
         port_detail_list = [
             (port['fixed_ips'][0]['subnet_id'],
              port['fixed_ips'][0]['ip_address'],
@@ -459,7 +458,7 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
         subnet_id = tenant.subnet['id']
         self.assertIn((subnet_id, server_ip, mac_addr), port_detail_list)
 
-    @test.idempotent_id('e79f879e-debb-440c-a7e4-efeda05b6848')
+    @decorators.idempotent_id('e79f879e-debb-440c-a7e4-efeda05b6848')
     @test.services('compute', 'network')
     def test_cross_tenant_traffic(self):
         if not self.credentials_provider.is_multi_tenant():
@@ -480,7 +479,7 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
                 self._log_console_output(servers=tenant.servers)
             raise
 
-    @test.idempotent_id('63163892-bbf6-4249-aa12-d5ea1f8f421b')
+    @decorators.idempotent_id('63163892-bbf6-4249-aa12-d5ea1f8f421b')
     @test.services('compute', 'network')
     def test_in_tenant_traffic(self):
         try:
@@ -494,7 +493,8 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
                 self._log_console_output(servers=tenant.servers)
             raise
 
-    @test.idempotent_id('f4d556d7-1526-42ad-bafb-6bebf48568f6')
+    @decorators.idempotent_id('f4d556d7-1526-42ad-bafb-6bebf48568f6')
+    @test.attr(type='slow')
     @test.services('compute', 'network')
     def test_port_update_new_security_group(self):
         """Verifies the traffic after updating the vm port
@@ -530,24 +530,26 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
         # Check connectivity failure with default security group
         try:
             access_point_ssh = self._connect_to_access_point(new_tenant)
-            self._check_connectivity(access_point=access_point_ssh,
-                                     ip=self._get_server_ip(server),
-                                     should_succeed=False)
+            self.check_remote_connectivity(source=access_point_ssh,
+                                           dest=self._get_server_ip(server),
+                                           should_succeed=False)
             server_id = server['id']
-            port_id = self._list_ports(device_id=server_id)[0]['id']
+            port_id = self.admin_manager.ports_client.list_ports(
+                device_id=server_id)['ports'][0]['id']
 
             # update port with new security group and check connectivity
             self.ports_client.update_port(port_id, security_groups=[
                 new_tenant.security_groups['new_sg']['id']])
-            self._check_connectivity(
-                access_point=access_point_ssh,
-                ip=self._get_server_ip(server))
+            self.check_remote_connectivity(
+                source=access_point_ssh,
+                dest=self._get_server_ip(server))
         except Exception:
             for tenant in self.tenants.values():
                 self._log_console_output(servers=tenant.servers)
             raise
 
-    @test.idempotent_id('d2f77418-fcc4-439d-b935-72eca704e293')
+    @decorators.idempotent_id('d2f77418-fcc4-439d-b935-72eca704e293')
+    @test.attr(type='slow')
     @test.services('compute', 'network')
     def test_multiple_security_groups(self):
         """Verify multiple security groups and checks that rules
@@ -579,8 +581,9 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
                                    private_key=private_key,
                                    should_connect=True)
 
+    @test.attr(type='slow')
     @test.requires_ext(service='network', extension='port-security')
-    @test.idempotent_id('7c811dcc-263b-49a3-92d2-1b4d8405f50c')
+    @decorators.idempotent_id('7c811dcc-263b-49a3-92d2-1b4d8405f50c')
     @test.services('compute', 'network')
     def test_port_security_disable_security_group(self):
         """Verify the default security group rules is disabled."""
@@ -596,30 +599,32 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
 
         access_point_ssh = self._connect_to_access_point(new_tenant)
         server_id = server['id']
-        port_id = self._list_ports(device_id=server_id)[0]['id']
+        port_id = self.admin_manager.ports_client.list_ports(
+            device_id=server_id)['ports'][0]['id']
 
         # Flip the port's port security and check connectivity
         try:
             self.ports_client.update_port(port_id,
                                           port_security_enabled=True,
                                           security_groups=[])
-            self._check_connectivity(access_point=access_point_ssh,
-                                     ip=self._get_server_ip(server),
-                                     should_succeed=False)
+            self.check_remote_connectivity(source=access_point_ssh,
+                                           dest=self._get_server_ip(server),
+                                           should_succeed=False)
 
             self.ports_client.update_port(port_id,
                                           port_security_enabled=False,
                                           security_groups=[])
-            self._check_connectivity(
-                access_point=access_point_ssh,
-                ip=self._get_server_ip(server))
+            self.check_remote_connectivity(
+                source=access_point_ssh,
+                dest=self._get_server_ip(server))
         except Exception:
             for tenant in self.tenants.values():
                 self._log_console_output(servers=tenant.servers)
             raise
 
+    @test.attr(type='slow')
     @test.requires_ext(service='network', extension='port-security')
-    @test.idempotent_id('13ccf253-e5ad-424b-9c4a-97b88a026699')
+    @decorators.idempotent_id('13ccf253-e5ad-424b-9c4a-97b88a026699')
     @testtools.skipUnless(
         CONF.compute_feature_enabled.allow_port_security_disabled,
         'Port security must be enabled.')
@@ -640,7 +645,8 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
         sec_groups = []
         server = self._create_server(name, tenant, sec_groups)
         server_id = server['id']
-        ports = self._list_ports(device_id=server_id)
+        ports = self.admin_manager.ports_client.list_ports(
+            device_id=server_id)['ports']
         self.assertEqual(1, len(ports))
         for port in ports:
             self.assertEmpty(port['security_groups'],

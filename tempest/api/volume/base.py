@@ -14,9 +14,9 @@
 #    under the License.
 
 from tempest.common import compute
-from tempest.common.utils import data_utils
 from tempest.common import waiters
 from tempest import config
+from tempest.lib.common.utils import data_utils
 from tempest.lib.common.utils import test_utils
 from tempest.lib import exceptions
 import tempest.test
@@ -51,7 +51,7 @@ class BaseVolumeTest(tempest.test.BaseTestCase):
                 raise cls.skipException(msg)
         else:
             msg = ("Invalid Cinder API version (%s)" % cls._api_version)
-            raise exceptions.InvalidConfiguration(message=msg)
+            raise exceptions.InvalidConfiguration(msg)
 
     @classmethod
     def setup_credentials(cls):
@@ -131,8 +131,8 @@ class BaseVolumeTest(tempest.test.BaseTestCase):
 
         volume = cls.volumes_client.create_volume(**kwargs)['volume']
         cls.volumes.append(volume)
-        waiters.wait_for_volume_status(cls.volumes_client, volume['id'],
-                                       wait_until)
+        waiters.wait_for_volume_resource_status(cls.volumes_client,
+                                                volume['id'], wait_until)
         return volume
 
     @classmethod
@@ -145,9 +145,9 @@ class BaseVolumeTest(tempest.test.BaseTestCase):
 
         snapshot = cls.snapshots_client.create_snapshot(
             volume_id=volume_id, **kwargs)['snapshot']
-        cls.snapshots.append(snapshot)
-        waiters.wait_for_snapshot_status(cls.snapshots_client,
-                                         snapshot['id'], 'available')
+        cls.snapshots.append(snapshot['id'])
+        waiters.wait_for_volume_resource_status(cls.snapshots_client,
+                                                snapshot['id'], 'available')
         return snapshot
 
     def create_backup(self, volume_id, backup_client=None, **kwargs):
@@ -158,28 +158,37 @@ class BaseVolumeTest(tempest.test.BaseTestCase):
         backup = backup_client.create_backup(
             volume_id=volume_id, **kwargs)['backup']
         self.addCleanup(backup_client.delete_backup, backup['id'])
-        waiters.wait_for_backup_status(backup_client, backup['id'],
-                                       'available')
+        waiters.wait_for_volume_resource_status(backup_client, backup['id'],
+                                                'available')
         return backup
 
     # NOTE(afazekas): these create_* and clean_* could be defined
     # only in a single location in the source, and could be more general.
 
-    @classmethod
-    def delete_volume(cls, client, volume_id):
+    @staticmethod
+    def delete_volume(client, volume_id):
         """Delete volume by the given client"""
         client.delete_volume(volume_id)
         client.wait_for_resource_deletion(volume_id)
 
+    def delete_snapshot(self, snapshot_id, snapshots_client=None):
+        """Delete snapshot by the given client"""
+        if snapshots_client is None:
+            snapshots_client = self.snapshots_client
+        snapshots_client.delete_snapshot(snapshot_id)
+        snapshots_client.wait_for_resource_deletion(snapshot_id)
+        if snapshot_id in self.snapshots:
+            self.snapshots.remove(snapshot_id)
+
     def attach_volume(self, server_id, volume_id):
-        """Attachs a volume to a server"""
+        """Attach a volume to a server"""
         self.servers_client.attach_volume(
             server_id, volumeId=volume_id,
             device='/dev/%s' % CONF.compute.volume_device_name)
-        waiters.wait_for_volume_status(self.volumes_client,
-                                       volume_id, 'in-use')
-        self.addCleanup(waiters.wait_for_volume_status, self.volumes_client,
-                        volume_id, 'available')
+        waiters.wait_for_volume_resource_status(self.volumes_client,
+                                                volume_id, 'in-use')
+        self.addCleanup(waiters.wait_for_volume_resource_status,
+                        self.volumes_client, volume_id, 'available')
         self.addCleanup(self.servers_client.detach_volume, server_id,
                         volume_id)
 
@@ -201,12 +210,12 @@ class BaseVolumeTest(tempest.test.BaseTestCase):
     def clear_snapshots(cls):
         for snapshot in cls.snapshots:
             test_utils.call_and_ignore_notfound_exc(
-                cls.snapshots_client.delete_snapshot, snapshot['id'])
+                cls.snapshots_client.delete_snapshot, snapshot)
 
         for snapshot in cls.snapshots:
             test_utils.call_and_ignore_notfound_exc(
                 cls.snapshots_client.wait_for_resource_deletion,
-                snapshot['id'])
+                snapshot)
 
     def create_server(self, **kwargs):
         name = kwargs.pop(
@@ -257,6 +266,8 @@ class BaseVolumeAdminTest(BaseVolumeTest):
             cls.admin_volume_types_client = cls.os_adm.volume_types_v2_client
             cls.admin_volume_client = cls.os_adm.volumes_v2_client
             cls.admin_hosts_client = cls.os_adm.volume_hosts_v2_client
+            cls.admin_snapshot_manage_client = \
+                cls.os_adm.snapshot_manage_v2_client
             cls.admin_snapshots_client = cls.os_adm.snapshots_v2_client
             cls.admin_backups_client = cls.os_adm.backups_v2_client
             cls.admin_encryption_types_client = \

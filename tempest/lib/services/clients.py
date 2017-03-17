@@ -17,7 +17,8 @@
 import copy
 import importlib
 import inspect
-import logging
+
+from oslo_log import log as logging
 
 from tempest.lib import auth
 from tempest.lib.common.utils import misc
@@ -124,6 +125,9 @@ class ClientsRegistry(object):
                 name=plugin_name,
                 detailed_error=detailed_error % plugin_name)
         self._service_clients[plugin_name] = service_client_data
+        LOG.debug("Successfully registered plugin %s in the service client "
+                  "registry with configuration: %s", plugin_name,
+                  service_client_data)
 
     def get_service_clients(self):
         return self._service_clients
@@ -279,7 +283,7 @@ class ServiceClients(object):
         a dictionary ready to be injected in kwargs.
 
         Exceptions are:
-        - Token clients for 'identity' have a very different interface
+        - Token clients for 'identity' must be given an 'auth_url' parameter
         - Volume client for 'volume' accepts 'default_volume_size'
         - Servers client from 'compute' accepts 'enable_instance_password'
 
@@ -374,7 +378,7 @@ class ServiceClients(object):
                 except Exception:
                     LOG.exception(
                         'Failed to register service client from plugin %s '
-                        'with parameters %s' % (plugin, service_client))
+                        'with parameters %s', plugin, service_client)
                     raise
 
     def register_service_client_module(self, name, service_version,

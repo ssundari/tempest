@@ -10,7 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-
+import re
 import time
 
 from oslo_log import log as logging
@@ -26,13 +26,14 @@ CONF = config.CONF
 LOG = logging.getLogger(__name__)
 
 
+def _get_task_state(body):
+    return body.get('OS-EXT-STS:task_state', None)
+
+
 # NOTE(afazekas): This function needs to know a token and a subject.
 def wait_for_server_status(client, server_id, status, ready_wait=True,
                            extra_timeout=0, raise_on_error=True):
     """Waits for a server to reach a given status."""
-
-    def _get_task_state(body):
-        return body.get('OS-EXT-STS:task_state', None)
 
     # NOTE(afazekas): UNKNOWN status possible on ERROR
     # or in a very early stage.
@@ -99,21 +100,33 @@ def wait_for_server_status(client, server_id, status, ready_wait=True,
 
 def wait_for_server_termination(client, server_id, ignore_error=False):
     """Waits for server to reach termination."""
+    try:
+        body = client.show_server(server_id)['server']
+    except lib_exc.NotFound:
+        return
+    old_status = server_status = body['status']
+    old_task_state = task_state = _get_task_state(body)
     start_time = int(time.time())
     while True:
+        time.sleep(client.build_interval)
         try:
             body = client.show_server(server_id)['server']
         except lib_exc.NotFound:
             return
-
         server_status = body['status']
+        task_state = _get_task_state(body)
+        if (server_status != old_status) or (task_state != old_task_state):
+            LOG.info('State transition "%s" ==> "%s" after %d second wait',
+                     '/'.join((old_status, str(old_task_state))),
+                     '/'.join((server_status, str(task_state))),
+                     time.time() - start_time)
         if server_status == 'ERROR' and not ignore_error:
-            raise exceptions.BuildErrorException(server_id=server_id)
+            raise lib_exc.DeleteErrorException(resource_id=server_id)
 
         if int(time.time()) - start_time >= client.build_timeout:
             raise lib_exc.TimeoutException
-
-        time.sleep(client.build_interval)
+        old_status = server_status
+        old_task_state = task_state
 
 
 def wait_for_image_status(client, image_id, status):
@@ -166,67 +179,52 @@ def wait_for_image_status(client, image_id, status):
     raise lib_exc.TimeoutException(message)
 
 
-def wait_for_volume_status(client, volume_id, status):
-    """Waits for a Volume to reach a given status."""
-    body = client.show_volume(volume_id)['volume']
-    volume_status = body['status']
+def wait_for_volume_resource_status(client, resource_id, status):
+    """Waits for a volume resource to reach a given status.
+
+    This function is a common function for volume, snapshot and backup
+    resources. The function extracts the name of the desired resource from
+    the client class name of the resource.
+    """
+    resource_name = re.findall(r'(Volume|Snapshot|Backup)',
+                               client.__class__.__name__)[0].lower()
+    show_resource = getattr(client, 'show_' + resource_name)
+    resource_status = show_resource(resource_id)[resource_name]['status']
     start = int(time.time())
 
-    while volume_status != status:
+    while resource_status != status:
+        time.sleep(client.build_interval)
+        resource_status = show_resource(resource_id)[
+            '{}'.format(resource_name)]['status']
+        if resource_status == 'error' and resource_status != status:
+            raise exceptions.VolumeResourceBuildErrorException(
+                resource_name=resource_name, resource_id=resource_id)
+        if resource_name == 'volume' and resource_status == 'error_restoring':
+            raise exceptions.VolumeRestoreErrorException(volume_id=resource_id)
+
+        if int(time.time()) - start >= client.build_timeout:
+            message = ('%s %s failed to reach %s status (current %s) '
+                       'within the required time (%s s).' %
+                       (resource_name, resource_id, status, resource_status,
+                        client.build_timeout))
+            raise lib_exc.TimeoutException(message)
+
+
+def wait_for_volume_retype(client, volume_id, new_volume_type):
+    """Waits for a Volume to have a new volume type."""
+    body = client.show_volume(volume_id)['volume']
+    current_volume_type = body['volume_type']
+    start = int(time.time())
+
+    while current_volume_type != new_volume_type:
         time.sleep(client.build_interval)
         body = client.show_volume(volume_id)['volume']
-        volume_status = body['status']
-        if volume_status == 'error' and status != 'error':
-            raise exceptions.VolumeBuildErrorException(volume_id=volume_id)
-        if volume_status == 'error_restoring':
-            raise exceptions.VolumeRestoreErrorException(volume_id=volume_id)
+        current_volume_type = body['volume_type']
 
         if int(time.time()) - start >= client.build_timeout:
-            message = ('Volume %s failed to reach %s status (current %s) '
+            message = ('Volume %s failed to reach %s volume type (current %s) '
                        'within the required time (%s s).' %
-                       (volume_id, status, volume_status,
-                        client.build_timeout))
-            raise lib_exc.TimeoutException(message)
-
-
-def wait_for_snapshot_status(client, snapshot_id, status):
-    """Waits for a Snapshot to reach a given status."""
-    body = client.show_snapshot(snapshot_id)['snapshot']
-    snapshot_status = body['status']
-    start = int(time.time())
-
-    while snapshot_status != status:
-        time.sleep(client.build_interval)
-        body = client.show_snapshot(snapshot_id)['snapshot']
-        snapshot_status = body['status']
-        if snapshot_status == 'error':
-            raise exceptions.SnapshotBuildErrorException(
-                snapshot_id=snapshot_id)
-        if int(time.time()) - start >= client.build_timeout:
-            message = ('Snapshot %s failed to reach %s status (current %s) '
-                       'within the required time (%s s).' %
-                       (snapshot_id, status, snapshot_status,
-                        client.build_timeout))
-            raise lib_exc.TimeoutException(message)
-
-
-def wait_for_backup_status(client, backup_id, status):
-    """Waits for a Backup to reach a given status."""
-    body = client.show_backup(backup_id)['backup']
-    backup_status = body['status']
-    start = int(time.time())
-
-    while backup_status != status:
-        time.sleep(client.build_interval)
-        body = client.show_backup(backup_id)['backup']
-        backup_status = body['status']
-        if backup_status == 'error' and backup_status != status:
-            raise lib_exc.VolumeBackupException(backup_id=backup_id)
-
-        if int(time.time()) - start >= client.build_timeout:
-            message = ('Volume backup %s failed to reach %s status '
-                       '(current %s) within the required time (%s s).' %
-                       (backup_id, status, backup_status,
+                       (volume_id, new_volume_type, current_volume_type,
                         client.build_timeout))
             raise lib_exc.TimeoutException(message)
 
