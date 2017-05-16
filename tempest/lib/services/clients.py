@@ -39,17 +39,31 @@ def tempest_modules():
     Provides a dict of stable service modules available in Tempest, with
     ``service_version`` as key, and the module object as value.
     """
-    return {
-        'compute': compute,
-        'identity.v2': identity.v2,
-        'identity.v3': identity.v3,
-        'image.v1': image.v1,
-        'image.v2': image.v2,
-        'network': network,
-        'volume.v1': volume.v1,
-        'volume.v2': volume.v2,
-        'volume.v3': volume.v3
-    }
+    from oslo_config import cfg
+    if 'mercury' in cfg.CONF and cfg.CONF.mercury.enable:
+        return {
+            # 'compute': compute,
+            'identity.v2': identity.v2,
+            'identity.v3': identity.v3,
+            'image.v1': image.v1,
+            'image.v2': image.v2,
+            # 'network': network,
+            'volume.v1': volume.v1,
+            'volume.v2': volume.v2,
+            'volume.v3': volume.v3
+        }
+    else:
+        return {
+            'compute': compute,
+            'identity.v2': identity.v2,
+            'identity.v3': identity.v3,
+            'image.v1': image.v1,
+            'image.v2': image.v2,
+            'network': network,
+            'volume.v1': volume.v1,
+            'volume.v2': volume.v2,
+            'volume.v3': volume.v3
+        }
 
 
 def _tempest_internal_modules():
