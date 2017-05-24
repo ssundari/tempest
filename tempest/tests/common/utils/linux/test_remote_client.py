@@ -16,7 +16,6 @@ import time
 
 import fixtures
 from oslo_config import cfg
-from oslotest import mockpatch
 
 from tempest.common.utils.linux import remote_client
 from tempest import config
@@ -64,8 +63,8 @@ class TestRemoteClient(base.TestCase):
         cfg.CONF.set_default('connect_timeout', 1, group='validation')
 
         self.conn = remote_client.RemoteClient('127.0.0.1', 'user', 'pass')
-        self.ssh_mock = self.useFixture(mockpatch.PatchObject(self.conn,
-                                                              'ssh_client'))
+        self.ssh_mock = self.useFixture(fixtures.MockPatchObject(self.conn,
+                                                                 'ssh_client'))
 
     def test_write_to_console_regular_str(self):
         self.conn.write_to_console('test')
@@ -111,7 +110,7 @@ sdb          8:16      0 1000204886016  0 disk"""
         booted_at = 10000
         uptime_sec = 5000.02
         self.ssh_mock.mock.exec_command.return_value = uptime_sec
-        self.useFixture(mockpatch.PatchObject(
+        self.useFixture(fixtures.MockPatchObject(
             time, 'time', return_value=booted_at + uptime_sec))
         self.assertEqual(self.conn.get_boot_time(),
                          time.localtime(booted_at))
@@ -138,23 +137,6 @@ a0:b0:c0:d0:e0:f0"""
         self.assertEqual(self.conn.get_mac_address(), macs)
         self._assert_exec_called_with(
             "ip addr | awk '/ether/ {print $2}'")
-
-    def test_assign_static_ip(self):
-        self.ssh_mock.mock.exec_command.return_value = ''
-        ip = '10.0.0.2'
-        nic = 'eth0'
-        self.assertEqual(self.conn.assign_static_ip(nic, ip), '')
-        self._assert_exec_called_with(
-            "sudo ip addr add %s/%s dev %s" % (ip, '28', nic))
-
-    def test_set_nic_state(self):
-        nic = 'eth0'
-        self.conn.set_nic_state(nic)
-        self._assert_exec_called_with(
-            'sudo ip link set %s up' % nic)
-        self.conn.set_nic_state(nic, "down")
-        self._assert_exec_called_with(
-            'sudo ip link set %s down' % nic)
 
 
 class TestRemoteClientWithServer(base.TestCase):

@@ -38,7 +38,7 @@ class TestNetworkAdvancedServerOps(manager.NetworkScenarioTest):
     @classmethod
     def setup_clients(cls):
         super(TestNetworkAdvancedServerOps, cls).setup_clients()
-        cls.admin_servers_client = cls.os_adm.servers_client
+        cls.admin_servers_client = cls.os_admin.servers_client
 
     @classmethod
     def skip_checks(cls):
@@ -104,7 +104,7 @@ class TestNetworkAdvancedServerOps(manager.NetworkScenarioTest):
         return body['OS-EXT-SRV-ATTR:host']
 
     @decorators.idempotent_id('61f1aa9a-1573-410e-9054-afa557cab021')
-    @test.attr(type='slow')
+    @decorators.attr(type='slow')
     @test.services('compute', 'network')
     def test_server_connectivity_stop_start(self):
         keypair = self.create_keypair()
@@ -130,7 +130,7 @@ class TestNetworkAdvancedServerOps(manager.NetworkScenarioTest):
             server, keypair, floating_ip)
 
     @decorators.idempotent_id('88a529c2-1daa-4c85-9aec-d541ba3eb699')
-    @test.attr(type='slow')
+    @decorators.attr(type='slow')
     @test.services('compute', 'network')
     def test_server_connectivity_rebuild(self):
         keypair = self.create_keypair()
@@ -145,7 +145,7 @@ class TestNetworkAdvancedServerOps(manager.NetworkScenarioTest):
     @decorators.idempotent_id('2b2642db-6568-4b35-b812-eceed3fa20ce')
     @testtools.skipUnless(CONF.compute_feature_enabled.pause,
                           'Pause is not available.')
-    @test.attr(type='slow')
+    @decorators.attr(type='slow')
     @test.services('compute', 'network')
     def test_server_connectivity_pause_unpause(self):
         keypair = self.create_keypair()
@@ -163,7 +163,7 @@ class TestNetworkAdvancedServerOps(manager.NetworkScenarioTest):
     @decorators.idempotent_id('5cdf9499-541d-4923-804e-b9a60620a7f0')
     @testtools.skipUnless(CONF.compute_feature_enabled.suspend,
                           'Suspend is not available.')
-    @test.attr(type='slow')
+    @decorators.attr(type='slow')
     @test.services('compute', 'network')
     def test_server_connectivity_suspend_resume(self):
         keypair = self.create_keypair()
@@ -181,13 +181,10 @@ class TestNetworkAdvancedServerOps(manager.NetworkScenarioTest):
     @decorators.idempotent_id('719eb59d-2f42-4b66-b8b1-bb1254473967')
     @testtools.skipUnless(CONF.compute_feature_enabled.resize,
                           'Resize is not available.')
-    @test.attr(type='slow')
+    @decorators.attr(type='slow')
     @test.services('compute', 'network')
     def test_server_connectivity_resize(self):
         resize_flavor = CONF.compute.flavor_ref_alt
-        if resize_flavor == CONF.compute.flavor_ref:
-            msg = "Skipping test - flavor_ref and flavor_ref_alt are identical"
-            raise self.skipException(msg)
         keypair = self.create_keypair()
         server = self._setup_server(keypair)
         floating_ip = self._setup_network(server, keypair)
@@ -205,7 +202,7 @@ class TestNetworkAdvancedServerOps(manager.NetworkScenarioTest):
     @testtools.skipUnless(CONF.compute.min_compute_nodes > 1,
                           'Less than 2 compute nodes, skipping multinode '
                           'tests.')
-    @test.attr(type='slow')
+    @decorators.attr(type='slow')
     @test.services('compute', 'network')
     def test_server_connectivity_cold_migration(self):
         keypair = self.create_keypair()
@@ -231,7 +228,7 @@ class TestNetworkAdvancedServerOps(manager.NetworkScenarioTest):
     @testtools.skipUnless(CONF.compute.min_compute_nodes > 1,
                           'Less than 2 compute nodes, skipping multinode '
                           'tests.')
-    @test.attr(type='slow')
+    @decorators.attr(type='slow')
     @test.services('compute', 'network')
     def test_server_connectivity_cold_migration_revert(self):
         keypair = self.create_keypair()

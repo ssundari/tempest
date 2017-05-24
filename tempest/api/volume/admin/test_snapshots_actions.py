@@ -20,16 +20,16 @@ from tempest.lib import decorators
 CONF = config.CONF
 
 
-class SnapshotsActionsV2Test(base.BaseVolumeAdminTest):
+class SnapshotsActionsTest(base.BaseVolumeAdminTest):
     @classmethod
     def skip_checks(cls):
-        super(SnapshotsActionsV2Test, cls).skip_checks()
+        super(SnapshotsActionsTest, cls).skip_checks()
         if not CONF.volume_feature_enabled.snapshot:
             raise cls.skipException("Cinder snapshot feature disabled")
 
     @classmethod
     def resource_setup(cls):
-        super(SnapshotsActionsV2Test, cls).resource_setup()
+        super(SnapshotsActionsTest, cls).resource_setup()
 
         # Create a test shared volume for tests
         cls.volume = cls.create_volume()
@@ -43,7 +43,7 @@ class SnapshotsActionsV2Test(base.BaseVolumeAdminTest):
         snapshot_id = self.snapshot['id']
         self.admin_snapshots_client.reset_snapshot_status(snapshot_id,
                                                           status)
-        super(SnapshotsActionsV2Test, self).tearDown()
+        super(SnapshotsActionsTest, self).tearDown()
 
     def _create_reset_and_force_delete_temp_snapshot(self, status=None):
         # Create snapshot, reset snapshot status,
@@ -107,7 +107,3 @@ class SnapshotsActionsV2Test(base.BaseVolumeAdminTest):
     def test_snapshot_force_delete_when_snapshot_is_error_deleting(self):
         # test force delete when status of snapshot is error_deleting
         self._create_reset_and_force_delete_temp_snapshot('error_deleting')
-
-
-class SnapshotsActionsV1Test(SnapshotsActionsV2Test):
-    _api_version = 1

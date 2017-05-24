@@ -18,7 +18,6 @@ from tempest.common import fixed_network
 from tempest.common import waiters
 from tempest.lib.common.utils import data_utils
 from tempest.lib import decorators
-from tempest import test
 
 
 class ServersAdminTestJSON(base.BaseV2ComputeAdminTest):
@@ -27,7 +26,7 @@ class ServersAdminTestJSON(base.BaseV2ComputeAdminTest):
     @classmethod
     def setup_clients(cls):
         super(ServersAdminTestJSON, cls).setup_clients()
-        cls.client = cls.os_adm.servers_client
+        cls.client = cls.os_admin.servers_client
         cls.non_admin_client = cls.servers_client
 
     @classmethod
@@ -35,14 +34,15 @@ class ServersAdminTestJSON(base.BaseV2ComputeAdminTest):
         super(ServersAdminTestJSON, cls).resource_setup()
 
         cls.s1_name = data_utils.rand_name(cls.__name__ + '-server')
-        server = cls.create_test_server(name=cls.s1_name,
-                                        wait_until='ACTIVE')
+        server = cls.create_test_server(name=cls.s1_name)
         cls.s1_id = server['id']
 
         cls.s2_name = data_utils.rand_name(cls.__name__ + '-server')
         server = cls.create_test_server(name=cls.s2_name,
                                         wait_until='ACTIVE')
         cls.s2_id = server['id']
+        waiters.wait_for_server_status(cls.non_admin_client,
+                                       cls.s1_id, 'ACTIVE')
 
     @decorators.idempotent_id('06f960bb-15bb-48dc-873d-f96e89be7870')
     def test_list_servers_filter_by_error_status(self):
@@ -65,7 +65,7 @@ class ServersAdminTestJSON(base.BaseV2ComputeAdminTest):
         params = {'status': 'invalid_status'}
         body = self.client.list_servers(detail=True, **params)
         servers = body['servers']
-        self.assertEqual([], servers)
+        self.assertEmpty(servers)
 
     @decorators.idempotent_id('51717b38-bdc1-458b-b636-1cf82d99f62f')
     def test_list_servers_by_admin(self):
@@ -92,7 +92,7 @@ class ServersAdminTestJSON(base.BaseV2ComputeAdminTest):
         self.assertIn(self.s1_name, servers_name)
         self.assertIn(self.s2_name, servers_name)
 
-    @test.related_bug('1659811')
+    @decorators.related_bug('1659811')
     @decorators.idempotent_id('7e5d6b8f-454a-4ba1-8ae2-da857af8338b')
     def test_list_servers_by_admin_with_specified_tenant(self):
         # In nova v2, tenant_id is ignored unless all_tenants is specified

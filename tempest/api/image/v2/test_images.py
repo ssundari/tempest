@@ -18,12 +18,14 @@ import random
 
 import six
 
+import testtools
+
 from oslo_log import log as logging
 from tempest.api.image import base
 from tempest import config
 from tempest.lib.common.utils import data_utils
 from tempest.lib import decorators
-from tempest import test
+from tempest.lib import exceptions as lib_exc
 
 CONF = config.CONF
 LOG = logging.getLogger(__name__)
@@ -32,7 +34,7 @@ LOG = logging.getLogger(__name__)
 class BasicOperationsImagesTest(base.BaseV2ImageTest):
     """Here we test the basic operations of images"""
 
-    @test.attr(type='smoke')
+    @decorators.attr(type='smoke')
     @decorators.idempotent_id('139b765e-7f3d-4b3d-8b37-3ca3876ee318')
     def test_register_upload_get_image_file(self):
         """Here we test these functionalities
@@ -74,7 +76,7 @@ class BasicOperationsImagesTest(base.BaseV2ImageTest):
         body = self.client.show_image_file(image['id'])
         self.assertEqual(file_content, body.data)
 
-    @test.attr(type='smoke')
+    @decorators.attr(type='smoke')
     @decorators.idempotent_id('f848bb94-1c6e-45a4-8726-39e3a5b23535')
     def test_delete_image(self):
         # Deletes an image by image_id
@@ -96,7 +98,7 @@ class BasicOperationsImagesTest(base.BaseV2ImageTest):
         images_id = [item['id'] for item in images]
         self.assertNotIn(image['id'], images_id)
 
-    @test.attr(type='smoke')
+    @decorators.attr(type='smoke')
     @decorators.idempotent_id('f66891a7-a35c-41a8-b590-a065c2a1caa6')
     def test_update_image(self):
         # Updates an image by image_id
@@ -125,6 +127,40 @@ class BasicOperationsImagesTest(base.BaseV2ImageTest):
         body = self.client.show_image(image['id'])
         self.assertEqual(image['id'], body['id'])
         self.assertEqual(new_image_name, body['name'])
+
+    @testtools.skipUnless(CONF.image_feature_enabled.deactivate_image,
+                          'deactivate-image is not available.')
+    @decorators.idempotent_id('951ebe01-969f-4ea9-9898-8a3f1f442ab0')
+    def test_deactivate_reactivate_image(self):
+        # Create image
+        image_name = data_utils.rand_name('image')
+        image = self.create_image(name=image_name,
+                                  container_format='bare',
+                                  disk_format='raw',
+                                  visibility='private')
+
+        # Upload an image file
+        content = data_utils.random_bytes()
+        image_file = six.BytesIO(content)
+        self.client.store_image_file(image['id'], image_file)
+
+        # Deactivate image
+        self.client.deactivate_image(image['id'])
+        body = self.client.show_image(image['id'])
+        self.assertEqual("deactivated", body['status'])
+
+        # User unable to download deactivated image
+        self.assertRaises(lib_exc.Forbidden, self.client.show_image_file,
+                          image['id'])
+
+        # Reactivate image
+        self.client.reactivate_image(image['id'])
+        body = self.client.show_image(image['id'])
+        self.assertEqual("active", body['status'])
+
+        # User able to download image after reactivation
+        body = self.client.show_image_file(image['id'])
+        self.assertEqual(content, body.data)
 
 
 class ListUserImagesTest(base.BaseV2ImageTest):
@@ -328,7 +364,7 @@ class ListSharedImagesTest(base.BaseV2ImageTest):
     @classmethod
     def setup_clients(cls):
         super(ListSharedImagesTest, cls).setup_clients()
-        cls.image_member_client = cls.os.image_member_client_v2
+        cls.image_member_client = cls.os_primary.image_member_client_v2
         cls.alt_img_client = cls.os_alt.image_client_v2
 
     @decorators.idempotent_id('3fa50be4-8e38-4c02-a8db-7811bb780122')

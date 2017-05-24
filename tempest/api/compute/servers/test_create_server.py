@@ -38,8 +38,8 @@ class ServersTestJSON(base.BaseV2ComputeTest):
     def setup_clients(cls):
         super(ServersTestJSON, cls).setup_clients()
         cls.client = cls.servers_client
-        cls.networks_client = cls.os.networks_client
-        cls.subnets_client = cls.os.subnets_client
+        cls.networks_client = cls.os_primary.networks_client
+        cls.subnets_client = cls.os_primary.subnets_client
 
     @classmethod
     def resource_setup(cls):
@@ -77,7 +77,7 @@ class ServersTestJSON(base.BaseV2ComputeTest):
                         subnet['subnet']['id'])
         return net
 
-    @test.attr(type='smoke')
+    @decorators.attr(type='smoke')
     @decorators.idempotent_id('5de47127-9977-400a-936f-abcfbec1218f')
     def test_verify_server_details(self):
         # Verify the specified server attributes are set correctly
@@ -91,7 +91,7 @@ class ServersTestJSON(base.BaseV2ComputeTest):
         self.assertEqual(self.flavor_ref, self.server['flavor']['id'])
         self.assertEqual(self.meta, self.server['metadata'])
 
-    @test.attr(type='smoke')
+    @decorators.attr(type='smoke')
     @decorators.idempotent_id('9a438d88-10c6-4bcd-8b5b-5b6e25e1346f')
     def test_list_servers(self):
         # The created server should be in the list of all servers
@@ -224,91 +224,6 @@ class ServersTestJSON(base.BaseV2ComputeTest):
                     netaddr.IPNetwork('19.80.0.0/24')]
         for address, network in zip(addr, networks):
             self.assertIn(address, network)
-
-
-class ServersWithSpecificFlavorTestJSON(base.BaseV2ComputeAdminTest):
-    disk_config = 'AUTO'
-
-    @classmethod
-    def setup_credentials(cls):
-        cls.prepare_instance_network()
-        super(ServersWithSpecificFlavorTestJSON, cls).setup_credentials()
-
-    @classmethod
-    def setup_clients(cls):
-        super(ServersWithSpecificFlavorTestJSON, cls).setup_clients()
-        cls.client = cls.servers_client
-
-    @classmethod
-    def resource_setup(cls):
-        cls.set_validation_resources()
-
-        super(ServersWithSpecificFlavorTestJSON, cls).resource_setup()
-
-    @decorators.idempotent_id('b3c7bcfc-bb5b-4e22-b517-c7f686b802ca')
-    @testtools.skipUnless(CONF.validation.run_validation,
-                          'Instance validation tests are disabled.')
-    def test_verify_created_server_ephemeral_disk(self):
-        # Verify that the ephemeral disk is created when creating server
-        flavor_base = self.flavors_client.show_flavor(
-            self.flavor_ref)['flavor']
-
-        def create_flavor_with_ephemeral(ephem_disk):
-            name = 'flavor_with_ephemeral_%s' % ephem_disk
-            flavor_name = data_utils.rand_name(name)
-
-            ram = flavor_base['ram']
-            vcpus = flavor_base['vcpus']
-            disk = flavor_base['disk']
-
-            # Create a flavor with ephemeral disk
-            flavor = self.create_flavor(name=flavor_name, ram=ram, vcpus=vcpus,
-                                        disk=disk, ephemeral=ephem_disk)
-            return flavor['id']
-
-        flavor_with_eph_disk_id = create_flavor_with_ephemeral(ephem_disk=1)
-        flavor_no_eph_disk_id = create_flavor_with_ephemeral(ephem_disk=0)
-
-        admin_pass = self.image_ssh_password
-
-        server_no_eph_disk = self.create_test_server(
-            validatable=True,
-            wait_until='ACTIVE',
-            adminPass=admin_pass,
-            flavor=flavor_no_eph_disk_id)
-
-        # Get partition number of server without ephemeral disk.
-        server_no_eph_disk = self.client.show_server(
-            server_no_eph_disk['id'])['server']
-        linux_client = remote_client.RemoteClient(
-            self.get_server_ip(server_no_eph_disk),
-            self.ssh_user,
-            admin_pass,
-            self.validation_resources['keypair']['private_key'],
-            server=server_no_eph_disk,
-            servers_client=self.client)
-        disks_num = len(linux_client.get_disks().split('\n'))
-
-        # Explicit server deletion necessary for Juno compatibility
-        self.client.delete_server(server_no_eph_disk['id'])
-
-        server_with_eph_disk = self.create_test_server(
-            validatable=True,
-            wait_until='ACTIVE',
-            adminPass=admin_pass,
-            flavor=flavor_with_eph_disk_id)
-
-        server_with_eph_disk = self.client.show_server(
-            server_with_eph_disk['id'])['server']
-        linux_client = remote_client.RemoteClient(
-            self.get_server_ip(server_with_eph_disk),
-            self.ssh_user,
-            admin_pass,
-            self.validation_resources['keypair']['private_key'],
-            server=server_with_eph_disk,
-            servers_client=self.client)
-        disks_num_eph = len(linux_client.get_disks().split('\n'))
-        self.assertEqual(disks_num + 1, disks_num_eph)
 
 
 class ServersTestManualDisk(ServersTestJSON):

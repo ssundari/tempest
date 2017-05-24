@@ -26,17 +26,12 @@ class TokensTestJSON(base.BaseIdentityV2AdminTest):
         user_name = data_utils.rand_name(name='user')
         user_password = data_utils.rand_password()
         # first:create a tenant
-        tenant_name = data_utils.rand_name(name='tenant')
-        tenant = self.tenants_client.create_tenant(name=tenant_name)['tenant']
-        # Delete the tenant at the end of the test
-        self.addCleanup(self.tenants_client.delete_tenant, tenant['id'])
+        tenant = self.setup_test_tenant()
         # second:create a user
-        user = self.users_client.create_user(name=user_name,
-                                             password=user_password,
-                                             tenantId=tenant['id'],
-                                             email='')['user']
-        # Delete the user at the end of the test
-        self.addCleanup(self.users_client.delete_user, user['id'])
+        user = self.create_test_user(name=user_name,
+                                     password=user_password,
+                                     tenantId=tenant['id'],
+                                     email='')
         # then get a token for the user
         body = self.token_client.auth(user_name,
                                       user_password,
@@ -65,32 +60,20 @@ class TokensTestJSON(base.BaseIdentityV2AdminTest):
         user_name = data_utils.rand_name(name='user')
         user_password = data_utils.rand_password()
         tenant_id = None  # No default tenant so will get unscoped token.
-        email = ''
-        user = self.users_client.create_user(name=user_name,
-                                             password=user_password,
-                                             tenantId=tenant_id,
-                                             email=email)['user']
-        # Delete the user at the end of the test
-        self.addCleanup(self.users_client.delete_user, user['id'])
+        user = self.create_test_user(name=user_name,
+                                     password=user_password,
+                                     tenantId=tenant_id,
+                                     email='')
 
         # Create a couple tenants.
         tenant1_name = data_utils.rand_name(name='tenant')
-        tenant1 = self.tenants_client.create_tenant(
-            name=tenant1_name)['tenant']
-        # Delete the tenant at the end of the test
-        self.addCleanup(self.tenants_client.delete_tenant, tenant1['id'])
+        tenant1 = self.setup_test_tenant(name=tenant1_name)
 
         tenant2_name = data_utils.rand_name(name='tenant')
-        tenant2 = self.tenants_client.create_tenant(
-            name=tenant2_name)['tenant']
-        # Delete the tenant at the end of the test
-        self.addCleanup(self.tenants_client.delete_tenant, tenant2['id'])
+        tenant2 = self.setup_test_tenant(name=tenant2_name)
 
         # Create a role
-        role_name = data_utils.rand_name(name='role')
-        role = self.roles_client.create_role(name=role_name)['role']
-        # Delete the role at the end of the test
-        self.addCleanup(self.roles_client.delete_role, role['id'])
+        role = self.setup_test_role()
 
         # Grant the user the role on the tenants.
         self.roles_client.create_user_role_on_project(tenant1['id'],

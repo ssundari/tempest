@@ -81,13 +81,8 @@ class ScenarioTest(tempest.test.BaseTestCase):
         cls.security_groups_client = cls.manager.security_groups_client
         cls.security_group_rules_client = (
             cls.manager.security_group_rules_client)
-
-        if CONF.volume_feature_enabled.api_v2:
-            cls.volumes_client = cls.manager.volumes_v2_client
-            cls.snapshots_client = cls.manager.snapshots_v2_client
-        else:
-            cls.volumes_client = cls.manager.volumes_client
-            cls.snapshots_client = cls.manager.snapshots_client
+        cls.volumes_client = cls.manager.volumes_v2_client
+        cls.snapshots_client = cls.manager.snapshots_v2_client
 
     # ## Methods to handle sync and async deletes
 
@@ -296,12 +291,7 @@ class ScenarioTest(tempest.test.BaseTestCase):
                         volume['id'])
         self.addCleanup(test_utils.call_and_ignore_notfound_exc,
                         self.volumes_client.delete_volume, volume['id'])
-
-        # NOTE(e0ne): Cinder API v2 uses name instead of display_name
-        if 'display_name' in volume:
-            self.assertEqual(name, volume['display_name'])
-        else:
-            self.assertEqual(name, volume['name'])
+        self.assertEqual(name, volume['name'])
         waiters.wait_for_volume_resource_status(self.volumes_client,
                                                 volume['id'], 'available')
         # The volume retrieved on creation has a non-up-to-date status.
@@ -482,16 +472,17 @@ class ScenarioTest(tempest.test.BaseTestCase):
 
         return image
 
-    def _log_console_output(self, servers=None):
+    def _log_console_output(self, servers=None, client=None):
         if not CONF.compute_feature_enabled.console_output:
             LOG.debug('Console output not supported, cannot log')
             return
+        client = client or self.servers_client
         if not servers:
-            servers = self.servers_client.list_servers()
+            servers = client.list_servers()
             servers = servers['servers']
         for server in servers:
             try:
-                console_output = self.servers_client.get_console_output(
+                console_output = client.get_console_output(
                     server['id'])['output']
                 LOG.debug('Console output for %s\nbody=\n%s',
                           server['id'], console_output)
@@ -949,16 +940,16 @@ class NetworkScenarioTest(ScenarioTest):
                       show_floatingip(floatingip_id)['floatingip'])
             return status == result['status']
 
-        test_utils.call_until_true(refresh,
-                                   CONF.network.build_timeout,
-                                   CONF.network.build_interval)
-        floating_ip = self.floating_ips_client.show_floatingip(
-            floatingip_id)['floatingip']
-        self.assertEqual(status, floating_ip['status'],
-                         message="FloatingIP: {fp} is at status: {cst}. "
-                                 "failed  to reach status: {st}"
-                         .format(fp=floating_ip, cst=floating_ip['status'],
-                                 st=status))
+        if not test_utils.call_until_true(refresh,
+                                          CONF.network.build_timeout,
+                                          CONF.network.build_interval):
+            floating_ip = self.floating_ips_client.show_floatingip(
+                floatingip_id)['floatingip']
+            self.assertEqual(status, floating_ip['status'],
+                             message="FloatingIP: {fp} is at status: {cst}. "
+                                     "failed  to reach status: {st}"
+                             .format(fp=floating_ip, cst=floating_ip['status'],
+                                     st=status))
         LOG.info("FloatingIP: {fp} is at status: {st}"
                  .format(fp=floating_ip, st=status))
 
@@ -1312,14 +1303,9 @@ class EncryptionScenarioTest(ScenarioTest):
     @classmethod
     def setup_clients(cls):
         super(EncryptionScenarioTest, cls).setup_clients()
-        if CONF.volume_feature_enabled.api_v2:
-            cls.admin_volume_types_client = cls.os_adm.volume_types_v2_client
-            cls.admin_encryption_types_client =\
-                cls.os_adm.encryption_types_v2_client
-        else:
-            cls.admin_volume_types_client = cls.os_adm.volume_types_client
-            cls.admin_encryption_types_client =\
-                cls.os_adm.encryption_types_client
+        cls.admin_volume_types_client = cls.os_admin.volume_types_v2_client
+        cls.admin_encryption_types_client =\
+            cls.os_admin.encryption_types_v2_client
 
     def create_encryption_type(self, client=None, type_id=None, provider=None,
                                key_size=None, cipher=None,

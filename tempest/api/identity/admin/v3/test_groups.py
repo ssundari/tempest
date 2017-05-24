@@ -16,7 +16,6 @@
 from tempest.api.identity import base
 from tempest.lib.common.utils import data_utils
 from tempest.lib import decorators
-from tempest import test
 
 
 class GroupsV3TestJSON(base.BaseIdentityV3AdminTest):
@@ -72,7 +71,7 @@ class GroupsV3TestJSON(base.BaseIdentityV3AdminTest):
         # Verify that 'description' is not being updated or deleted.
         self.assertEqual(old_description, updated_group['description'])
 
-    @test.attr(type='smoke')
+    @decorators.attr(type='smoke')
     @decorators.idempotent_id('1598521a-2f36-4606-8df9-30772bd51339')
     def test_group_users_add_list_delete(self):
         name = data_utils.rand_name('Group')
@@ -82,12 +81,8 @@ class GroupsV3TestJSON(base.BaseIdentityV3AdminTest):
         # add user into group
         users = []
         for _ in range(3):
-            name = data_utils.rand_name('User')
-            password = data_utils.rand_password()
-            user = self.users_client.create_user(name=name,
-                                                 password=password)['user']
+            user = self.create_test_user()
             users.append(user)
-            self.addCleanup(self.users_client.delete_user, user['id'])
             self.groups_client.add_group_user(group['id'], user['id'])
 
         # list users in group
@@ -105,10 +100,7 @@ class GroupsV3TestJSON(base.BaseIdentityV3AdminTest):
     @decorators.idempotent_id('64573281-d26a-4a52-b899-503cb0f4e4ec')
     def test_list_user_groups(self):
         # create a user
-        user = self.users_client.create_user(
-            name=data_utils.rand_name('User'),
-            password=data_utils.rand_password())['user']
-        self.addCleanup(self.users_client.delete_user, user['id'])
+        user = self.create_test_user()
         # create two groups, and add user into them
         groups = []
         for _ in range(2):
@@ -142,4 +134,4 @@ class GroupsV3TestJSON(base.BaseIdentityV3AdminTest):
         for g in body:
             fetched_ids.append(g['id'])
         missing_groups = [g for g in group_ids if g not in fetched_ids]
-        self.assertEqual([], missing_groups)
+        self.assertEmpty(missing_groups)

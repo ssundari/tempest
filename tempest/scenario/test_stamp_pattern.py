@@ -68,10 +68,7 @@ class TestStampPattern(manager.ScenarioTest):
                                                 volume['id'], 'available')
         waiters.wait_for_volume_resource_status(self.snapshots_client,
                                                 snapshot['id'], 'available')
-        if 'display_name' in snapshot:
-            self.assertEqual(snapshot_name, snapshot['display_name'])
-        else:
-            self.assertEqual(snapshot_name, snapshot['name'])
+        self.assertEqual(snapshot_name, snapshot['name'])
         return snapshot
 
     def _wait_for_volume_available_on_the_system(self, ip_address,
@@ -88,7 +85,7 @@ class TestStampPattern(manager.ScenarioTest):
                                           CONF.compute.build_interval):
             raise lib_exc.TimeoutException
 
-    @test.attr(type='slow')
+    @decorators.attr(type='slow')
     @decorators.skip_because(bug="1664793")
     @decorators.idempotent_id('10fd234a-515c-41e5-b092-8323060598c5')
     @testtools.skipUnless(CONF.compute_feature_enabled.snapshot,

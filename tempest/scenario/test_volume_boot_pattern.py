@@ -81,13 +81,7 @@ class TestVolumeBootPattern(manager.ScenarioTest):
         self.addCleanup(self.snapshots_client.delete_snapshot, snap['id'])
         waiters.wait_for_volume_resource_status(self.snapshots_client,
                                                 snap['id'], 'available')
-
-        # NOTE(e0ne): Cinder API v2 uses name instead of display_name
-        if 'display_name' in snap:
-            self.assertEqual(snap_name, snap['display_name'])
-        else:
-            self.assertEqual(snap_name, snap['name'])
-
+        self.assertEqual(snap_name, snap['name'])
         return snap
 
     def _delete_server(self, server):
@@ -176,7 +170,7 @@ class TestVolumeBootPattern(manager.ScenarioTest):
         self.assertEqual(timestamp, timestamp3)
 
     @decorators.idempotent_id('05795fb2-b2a7-4c9f-8fac-ff25aedb1489')
-    @test.attr(type='slow')
+    @decorators.attr(type='slow')
     @test.services('compute', 'image', 'volume')
     def test_create_server_from_volume_snapshot(self):
         # Create a volume from an image

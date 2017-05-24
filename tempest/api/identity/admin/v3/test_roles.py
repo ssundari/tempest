@@ -19,7 +19,6 @@ from tempest.lib.common.utils import data_utils
 from tempest.lib.common.utils import test_utils
 from tempest.lib import decorators
 from tempest.lib import exceptions as lib_exc
-from tempest import test
 
 CONF = config.CONF
 
@@ -39,9 +38,7 @@ class RolesV3TestJSON(base.BaseIdentityV3AdminTest):
         u_desc = '%s description' % u_name
         u_email = '%s@testmail.tm' % u_name
         cls.u_password = data_utils.rand_password()
-        cls.domain = cls.domains_client.create_domain(
-            name=data_utils.rand_name('domain'),
-            description=data_utils.rand_name('domain-desc'))['domain']
+        cls.domain = cls.create_domain()
         cls.project = cls.projects_client.create_project(
             data_utils.rand_name('project'),
             description=data_utils.rand_name('project-desc'),
@@ -74,7 +71,7 @@ class RolesV3TestJSON(base.BaseIdentityV3AdminTest):
         self.assertEqual(len(body), 1)
         self.assertIn(role_id, fetched_role_ids)
 
-    @test.attr(type='smoke')
+    @decorators.attr(type='smoke')
     @decorators.idempotent_id('18afc6c0-46cf-4911-824e-9989cc056c3a')
     def test_role_create_update_show_list(self):
         r_name = data_utils.rand_name('Role')
@@ -218,7 +215,7 @@ class RolesV3TestJSON(base.BaseIdentityV3AdminTest):
                 implies_role_id)
 
     @decorators.idempotent_id('c90c316c-d706-4728-bcba-eb1912081b69')
-    def test_implied_roles_create_delete(self):
+    def test_implied_roles_create_check_show_delete(self):
         prior_role_id = self.roles[0]['id']
         implies_role_id = self.roles[1]['id']
 
@@ -227,8 +224,18 @@ class RolesV3TestJSON(base.BaseIdentityV3AdminTest):
                                   ignore_not_found=True)
 
         # Check if the inference rule exists
-        self.roles_client.show_role_inference_rule(
+        self.roles_client.check_role_inference_rule(
             prior_role_id, implies_role_id)
+
+        # Show the inference rule and check its elements
+        resp_body = self.roles_client.show_role_inference_rule(
+            prior_role_id, implies_role_id)
+        self.assertIn('role_inference', resp_body)
+        role_inference = resp_body['role_inference']
+        for key1 in ['prior_role', 'implies']:
+            self.assertIn(key1, role_inference)
+            for key2 in ['id', 'links', 'name']:
+                self.assertIn(key2, role_inference[key1])
 
         # Delete the inference rule
         self.roles_client.delete_role_inference_rule(
@@ -381,3 +388,48 @@ class RolesV3TestJSON(base.BaseIdentityV3AdminTest):
         role_assignments = self.role_assignments.list_role_assignments(
             effective=True, **params)['role_assignments']
         self.assertEmpty(role_assignments)
+
+    @decorators.idempotent_id('3748c316-c18f-4b08-997b-c60567bc6235')
+    def test_list_all_implied_roles(self):
+        # Create inference rule from "roles[0]" to "roles[1]"
+        self._create_implied_role(
+            self.roles[0]['id'], self.roles[1]['id'])
+
+        # Create inference rule from "roles[0]" to "roles[2]"
+        self._create_implied_role(
+            self.roles[0]['id'], self.roles[2]['id'])
+
+        # Create inference rule from "roles[2]" to "role"
+        self._create_implied_role(
+            self.roles[2]['id'], self.role['id'])
+
+        rules = self.roles_client.list_all_role_inference_rules()[
+            'role_inferences']
+        # Sort the rules by the number of inferences, since there should be 1
+        # inference between "roles[2]" and "role" and 2 inferences for
+        # "roles[0]": between "roles[1]" and "roles[2]".
+        sorted_rules = sorted(rules, key=lambda r: len(r['implies']))
+
+        # Check that 2 sets of rules are returned.
+        self.assertEqual(2, len(sorted_rules))
+        # Check that only 1 inference rule exists between "roles[2]" and "role"
+        self.assertEqual(1, len(sorted_rules[0]['implies']))
+        # Check that 2 inference rules exist for "roles[0]": one between
+        # "roles[1]" and one between "roles[2]".
+        self.assertEqual(2, len(sorted_rules[1]['implies']))
+
+        # Check that "roles[2]" is the "prior_role" and that "role" is the
+        # "implies" role.
+        self.assertEqual(self.roles[2]['id'],
+                         sorted_rules[0]['prior_role']['id'])
+        self.assertEqual(self.role['id'],
+                         sorted_rules[0]['implies'][0]['id'])
+
+        # Check that "roles[0]" is the "prior_role" and that "roles[1]" and
+        # "roles[2]" are the "implies" roles.
+        self.assertEqual(self.roles[0]['id'],
+                         sorted_rules[1]['prior_role']['id'])
+
+        implies_ids = [r['id'] for r in sorted_rules[1]['implies']]
+        self.assertIn(self.roles[1]['id'], implies_ids)
+        self.assertIn(self.roles[2]['id'], implies_ids)

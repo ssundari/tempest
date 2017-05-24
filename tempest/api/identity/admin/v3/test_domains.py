@@ -18,7 +18,6 @@ from tempest import config
 from tempest.lib.common.utils import data_utils
 from tempest.lib.common.utils import test_utils
 from tempest.lib import decorators
-from tempest import test
 
 CONF = config.CONF
 
@@ -32,10 +31,7 @@ class DomainsTestJSON(base.BaseIdentityV3AdminTest):
         # One of those domains will be disabled
         cls.setup_domains = list()
         for i in range(3):
-            domain = cls.domains_client.create_domain(
-                name=data_utils.rand_name('domain'),
-                description=data_utils.rand_name('domain-desc'),
-                enabled=i < 2)['domain']
+            domain = cls.create_domain(enabled=i < 2)
             cls.setup_domains.append(domain)
 
     @classmethod
@@ -87,7 +83,7 @@ class DomainsTestJSON(base.BaseIdentityV3AdminTest):
         for domain in fetched_domains:
             self.assertEqual(True, domain['enabled'])
 
-    @test.attr(type='smoke')
+    @decorators.attr(type='smoke')
     @decorators.idempotent_id('f2f5b44a-82e8-4dad-8084-0661ea3b18cf')
     def test_create_update_delete_domain(self):
         # Create domain
@@ -153,11 +149,7 @@ class DomainsTestJSON(base.BaseIdentityV3AdminTest):
         self.addCleanup(self._delete_domain, domain['id'])
         self.assertIn('id', domain)
         expected_data = {'name': d_name, 'enabled': True}
-        # TODO(gmann): there is bug in keystone liberty version where
-        # description is not being returned if it is not being passed in
-        # request. Bug#1649245. Once bug is fixed then we can enable the below
-        # check.
-        # self.assertEqual('', domain['description'])
+        self.assertEqual('', domain['description'])
         self.assertDictContainsSubset(expected_data, domain)
 
 
@@ -168,7 +160,7 @@ class DefaultDomainTestJSON(base.BaseIdentityV3AdminTest):
         cls.domain_id = CONF.identity.default_domain_id
         super(DefaultDomainTestJSON, cls).resource_setup()
 
-    @test.attr(type='smoke')
+    @decorators.attr(type='smoke')
     @decorators.idempotent_id('17a5de24-e6a0-4e4a-a9ee-d85b6e5612b5')
     def test_default_domain_exists(self):
         domain = self.domains_client.show_domain(self.domain_id)['domain']

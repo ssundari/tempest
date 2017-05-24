@@ -50,6 +50,8 @@ class RemoteClient(remote_client.RemoteClient):
             ping_count=CONF.validation.ping_count,
             ping_size=CONF.validation.ping_size)
 
+    # Note that this method will not work on SLES11 guests, as they do
+    # not support the TYPE column on lsblk
     def get_disks(self):
         # Select root disk devices as shown by lsblk
         command = 'lsblk -lb --nodeps'
@@ -79,12 +81,6 @@ class RemoteClient(remote_client.RemoteClient):
         cmd = 'sudo sh -c "echo \\"%s\\" >/dev/console"' % message
         return self.exec_command(cmd)
 
-    def set_mac_address(self, nic, address):
-        self.set_nic_state(nic=nic, state="down")
-        cmd = "sudo ip link set dev {0} address {1}".format(nic, address)
-        self.exec_command(cmd)
-        self.set_nic_state(nic=nic, state="up")
-
     def get_mac_address(self, nic=""):
         show_nic = "show {nic} ".format(nic=nic) if nic else ""
         cmd = "ip addr %s| awk '/ether/ {print $2}'" % show_nic
@@ -98,15 +94,6 @@ class RemoteClient(remote_client.RemoteClient):
     def get_nic_name_by_ip(self, address):
         cmd = "ip -o addr | awk '/%s/ {print $2}'" % address
         return self._get_nic_name(cmd)
-
-    def assign_static_ip(self, nic, addr, network_mask_bits=28):
-        cmd = "sudo ip addr add {ip}/{mask} dev {nic}".format(
-            ip=addr, mask=network_mask_bits, nic=nic)
-        return self.exec_command(cmd)
-
-    def set_nic_state(self, nic, state="up"):
-        cmd = "sudo ip link set {nic} {state}".format(nic=nic, state=state)
-        return self.exec_command(cmd)
 
     def get_dns_servers(self):
         cmd = 'cat /etc/resolv.conf'

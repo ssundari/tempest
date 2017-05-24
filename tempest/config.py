@@ -161,7 +161,9 @@ IdentityGroup = [
                choices=['public', 'admin', 'internal',
                         'publicURL', 'adminURL', 'internalURL'],
                help="The endpoint type to use for OpenStack Identity "
-                    "(Keystone) API v3"),
+                    "(Keystone) API v3. The default value adminURL is "
+                    "deprecated and will be modified to publicURL in "
+                    "the next release."),
     cfg.StrOpt('admin_role',
                default='admin',
                help="Role required to administrate keystone."),
@@ -208,6 +210,10 @@ IdentityFeatureGroup = [
     cfg.BoolOpt('api_v2',
                 default=True,
                 help='Is the v2 identity API enabled'),
+    cfg.BoolOpt('api_v2_admin',
+                default=True,
+                help="Is the v2 identity admin API available? This setting "
+                     "only applies if api_v2 is set to True."),
     cfg.BoolOpt('api_v3',
                 default=True,
                 help='Is the v3 identity API enabled'),
@@ -217,21 +223,17 @@ IdentityFeatureGroup = [
                      "entry all which indicates every extension is enabled. "
                      "Empty list indicates all extensions are disabled. "
                      "To get the list of extensions run: 'keystone discover'"),
-    # TODO(rodrigods): Remove the reseller flag when Kilo and Liberty is end
-    # of life.
-    cfg.BoolOpt('reseller',
-                default=True,
-                help='Does the environment support reseller?',
-                deprecated_for_removal=True,
-                deprecated_reason="All supported version of OpenStack now "
-                                  "supports the 'reseller' feature"),
     # TODO(rodrigods): This is a feature flag for bug 1590578 which is fixed
     # in Newton and Ocata. This option can be removed after Mitaka is end of
     # life.
     cfg.BoolOpt('forbid_global_implied_dsr',
                 default=False,
                 help='Does the environment forbid global roles implying '
-                     'domain specific ones?'),
+                     'domain specific ones?',
+                deprecated_for_removal=True,
+                deprecated_reason="This feature flag was introduced to "
+                                  "support testing of old OpenStack versions, "
+                                  "which are not supported anymore"),
     cfg.BoolOpt('security_compliance',
                 default=False,
                 help='Does the environment have the security compliance '
@@ -291,7 +293,9 @@ ComputeGroup = [
     cfg.StrOpt('volume_device_name',
                default='vdb',
                help="Expected device name when a volume is attached to "
-                    "an instance"),
+                    "an instance. Not all hypervisors guarantee that they "
+                    "will respect the user defined device name, tests may "
+                    "fail if inappropriate device name is set."),
     cfg.IntOpt('shelved_offload_time',
                default=0,
                help='Time in seconds before a shelved instance is eligible '
@@ -334,15 +338,6 @@ compute_features_group = cfg.OptGroup(name='compute-feature-enabled',
                                       title="Enabled Compute Service Features")
 
 ComputeFeaturesGroup = [
-    # NOTE(mriedem): This is a feature toggle for bug 1175464 which is fixed in
-    # mitaka and newton. This option can be removed after liberty-eol.
-    cfg.BoolOpt('allow_port_security_disabled',
-                default=True,
-                help='Does the test environment support creating ports in a '
-                     'network where port security is disabled?',
-                deprecated_for_removal=True,
-                deprecated_reason='This config switch was added for Liberty '
-                                  'which is not supported anymore.'),
     cfg.BoolOpt('disk_config',
                 default=True,
                 help="If false, skip disk config tests"),
@@ -368,7 +363,10 @@ ComputeFeaturesGroup = [
                      "serial console output?"),
     cfg.BoolOpt('resize',
                 default=False,
-                help="Does the test environment support resizing?"),
+                help="Does the test environment support resizing? When you "
+                     "enable this feature, 'flavor_ref_alt' should be set and "
+                     "it should refer to a larger flavor than 'flavor_ref' "
+                     "one."),
     cfg.BoolOpt('pause',
                 default=True,
                 help="Does the test environment support pausing?"),
@@ -384,6 +382,11 @@ ComputeFeaturesGroup = [
     cfg.BoolOpt('live_migration',
                 default=True,
                 help="Does the test environment support live migration?"),
+    cfg.BoolOpt('live_migrate_back_and_forth',
+                default=False,
+                help="Does the test environment support live migrating "
+                     "VM back and forth between different versions of "
+                     "nova-compute?"),
     cfg.BoolOpt('metadata_service',
                 default=True,
                 help="Does the test environment support metadata service? "
@@ -394,9 +397,9 @@ ComputeFeaturesGroup = [
                      "migration"),
     cfg.BoolOpt('block_migrate_cinder_iscsi',
                 default=False,
-                help="Does the test environment block migration support "
-                "cinder iSCSI volumes. Note, libvirt doesn't support this, "
-                "see https://bugs.launchpad.net/nova/+bug/1398999"),
+                help="Does the test environment support block migration with "
+                "Cinder iSCSI volumes. Note: libvirt >= 1.2.17 is required "
+                "to support this if using the libvirt compute driver."),
     cfg.BoolOpt('vnc_console',
                 default=False,
                 help='Enable VNC console. This configuration value should '
@@ -409,6 +412,11 @@ ComputeFeaturesGroup = [
                 default=False,
                 help='Enable RDP console. This configuration value should '
                      'be same as [nova.rdp]->enabled in nova.conf'),
+    cfg.BoolOpt('serial_console',
+                default=False,
+                help='Enable serial console. This configuration value '
+                     'should be the same as [nova.serial_console]->enabled '
+                     'in nova.conf'),
     cfg.BoolOpt('rescue',
                 default=True,
                 help='Does the test environment support instance rescue '
@@ -503,7 +511,7 @@ ImageGroup = [
                      "users can specify."),
     cfg.ListOpt('disk_formats',
                 default=['ami', 'ari', 'aki', 'vhd', 'vmdk', 'raw', 'qcow2',
-                         'vdi', 'iso'],
+                         'vdi', 'iso', 'vhdx'],
                 help="A list of image's disk formats "
                      "users can specify.")
 ]
@@ -531,7 +539,10 @@ ImageFeaturesGroup = [
     cfg.BoolOpt('deactivate_image',
                 default=False,
                 help="Is the deactivate-image feature enabled."
-                     " The feature has been integrated since Kilo."),
+                     " The feature has been integrated since Kilo.",
+                deprecated_for_removal=True,
+                deprecated_reason="All supported versions of OpenStack now "
+                                  "support the 'deactivate_image' feature"),
 ]
 
 network_group = cfg.OptGroup(name='network',
@@ -608,15 +619,6 @@ NetworkGroup = [
                 default=False,
                 help="The environment does not support network separation "
                      "between tenants."),
-    # TODO(ylobankov): Delete this option once the Liberty release is EOL.
-    cfg.BoolOpt('dvr_extra_resources',
-                default=True,
-                help="Whether or not to create internal network, subnet, "
-                     "port and add network interface to distributed router "
-                     "in L3 agent scheduler test. Extra resources need to be "
-                     "provisioned in order to bind router to L3 agent in the "
-                     "Liberty release or older, and are not required since "
-                     "the Mitaka release.")
 ]
 
 network_feature_group = cfg.OptGroup(name='network-feature-enabled',
@@ -678,9 +680,7 @@ ValidationGroup = [
                help='Default IP version for ssh connections.'),
     cfg.IntOpt('ping_timeout',
                default=120,
-               help='Timeout in seconds to wait for ping to succeed.',
-               deprecated_opts=[cfg.DeprecatedOpt('ping_timeout',
-                                                  group='compute')]),
+               help='Timeout in seconds to wait for ping to succeed.'),
     cfg.IntOpt('connect_timeout',
                default=60,
                help='Timeout in seconds to wait for the TCP connection to be '
@@ -690,13 +690,7 @@ ValidationGroup = [
                help='Timeout in seconds to wait for the ssh banner.'),
     cfg.StrOpt('image_ssh_user',
                default="root",
-               help="User name used to authenticate to an instance.",
-               deprecated_opts=[cfg.DeprecatedOpt('image_ssh_user',
-                                                  group='compute'),
-                                cfg.DeprecatedOpt('ssh_user',
-                                                  group='compute'),
-                                cfg.DeprecatedOpt('ssh_user',
-                                                  group='scenario')]),
+               help="User name used to authenticate to an instance."),
     cfg.StrOpt('image_ssh_password',
                default="password",
                help="Password used to authenticate to an instance."),
@@ -721,9 +715,7 @@ ValidationGroup = [
     cfg.StrOpt('network_for_ssh',
                default='public',
                help="Network used for SSH connections. Ignored if "
-                    "connect_method=floating.",
-               deprecated_opts=[cfg.DeprecatedOpt('network_for_ssh',
-                                                  group='compute')]),
+                    "connect_method=floating."),
 ]
 
 volume_group = cfg.OptGroup(name='volume',
@@ -767,6 +759,12 @@ VolumeGroup = [
     cfg.IntOpt('volume_size',
                default=1,
                help='Default size in GB for volumes created by volumes tests'),
+    cfg.ListOpt('manage_volume_ref',
+                default=['source-name', 'volume-%s'],
+                help="A reference to existing volume for volume manage. "
+                     "It contains two elements, the first is ref type "
+                     "(like 'source-name', 'source-id', etc), the second is "
+                     "volume name template used in storage backend"),
     cfg.StrOpt('min_microversion',
                default=None,
                help="Lower version of the test target microversion range. "
@@ -806,14 +804,21 @@ VolumeFeaturesGroup = [
     cfg.BoolOpt('manage_snapshot',
                 default=False,
                 help='Runs Cinder manage snapshot tests'),
+    cfg.BoolOpt('manage_volume',
+                default=False,
+                help='Runs Cinder manage volume tests'),
     cfg.ListOpt('api_extensions',
                 default=['all'],
                 help='A list of enabled volume extensions with a special '
                      'entry all which indicates every extension is enabled. '
                      'Empty list indicates all extensions are disabled'),
     cfg.BoolOpt('api_v1',
-                default=True,
-                help="Is the v1 volume API enabled"),
+                default=False,
+                help="Is the v1 volume API enabled",
+                deprecated_for_removal=True,
+                deprecated_reason="The v1 volume API has been deprecated "
+                                  "since Juno release, and the API will be "
+                                  "removed."),
     cfg.BoolOpt('api_v2',
                 default=True,
                 help="Is the v2 volume API enabled"),
@@ -896,38 +901,58 @@ orchestration_group = cfg.OptGroup(name='orchestration',
 OrchestrationGroup = [
     cfg.StrOpt('catalog_type',
                default='orchestration',
-               help="Catalog type of the Orchestration service."),
+               help="Catalog type of the Orchestration service.",
+               deprecated_for_removal=True,
+               deprecated_reason='Heat support will be removed from Tempest'),
     cfg.StrOpt('region',
                default='',
                help="The orchestration region name to use. If empty, the "
                     "value of identity.region is used instead. If no such "
                     "region is found in the service catalog, the first found "
-                    "one is used."),
+                    "one is used.",
+               deprecated_for_removal=True,
+               deprecated_reason='Heat support will be removed from Tempest'),
     cfg.StrOpt('endpoint_type',
                default='publicURL',
                choices=['public', 'admin', 'internal',
                         'publicURL', 'adminURL', 'internalURL'],
-               help="The endpoint type to use for the orchestration service."),
+               help="The endpoint type to use for the orchestration service.",
+               deprecated_for_removal=True,
+               deprecated_reason='Heat support will be removed from Tempest'),
     cfg.StrOpt('stack_owner_role', default='heat_stack_owner',
-               help='Role required for users to be able to manage stacks'),
+               help='Role required for users to be able to manage stacks',
+               deprecated_for_removal=True,
+               deprecated_reason='Heat support will be removed from Tempest'),
     cfg.IntOpt('build_interval',
                default=1,
-               help="Time in seconds between build status checks."),
+               help="Time in seconds between build status checks.",
+               deprecated_for_removal=True,
+               deprecated_reason='Heat support will be removed from Tempest'),
     cfg.IntOpt('build_timeout',
                default=1200,
-               help="Timeout in seconds to wait for a stack to build."),
+               help="Timeout in seconds to wait for a stack to build.",
+               deprecated_for_removal=True,
+               deprecated_reason='Heat support will be removed from Tempest'),
     cfg.StrOpt('instance_type',
                default='m1.micro',
                help="Instance type for tests. Needs to be big enough for a "
-                    "full OS plus the test workload"),
+                    "full OS plus the test workload",
+               deprecated_for_removal=True,
+               deprecated_reason='Heat support will be removed from Tempest'),
     cfg.StrOpt('keypair_name',
-               help="Name of existing keypair to launch servers with."),
+               help="Name of existing keypair to launch servers with.",
+               deprecated_for_removal=True,
+               deprecated_reason='Heat support will be removed from Tempest'),
     cfg.IntOpt('max_template_size',
                default=524288,
-               help="Value must match heat configuration of the same name."),
+               help="Value must match heat configuration of the same name.",
+               deprecated_for_removal=True,
+               deprecated_reason='Heat support will be removed from Tempest'),
     cfg.IntOpt('max_resources_per_stack',
                default=1000,
-               help="Value must match heat configuration of the same name."),
+               help="Value must match heat configuration of the same name.",
+               deprecated_for_removal=True,
+               deprecated_reason='Heat support will be removed from Tempest'),
 ]
 
 
@@ -993,7 +1018,9 @@ ServiceAvailableGroup = [
                 help="Whether or not nova is expected to be available"),
     cfg.BoolOpt('heat',
                 default=False,
-                help="Whether or not Heat is expected to be available"),
+                help="Whether or not Heat is expected to be available",
+                deprecated_for_removal=True,
+                deprecated_reason='Heat support will be removed from Tempest'),
 ]
 
 debug_group = cfg.OptGroup(name="debug",

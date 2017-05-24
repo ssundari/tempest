@@ -22,7 +22,6 @@ from tempest import config
 from tempest.lib.common.utils import data_utils
 from tempest.lib import decorators
 from tempest.lib import exceptions as lib_exc
-from tempest import test
 
 CONF = config.CONF
 
@@ -46,24 +45,25 @@ class BaseTrustsV3Test(base.BaseIdentityV3AdminTest):
 
     def create_trustor_and_roles(self):
         # create a project that trusts will be granted on
-        self.trustor_project_name = data_utils.rand_name(name='project')
+        trustor_project_name = data_utils.rand_name(name='project')
         project = self.projects_client.create_project(
-            self.trustor_project_name, domain_id='default')['project']
+            trustor_project_name,
+            domain_id=CONF.identity.default_domain_id)['project']
         self.trustor_project_id = project['id']
         self.assertIsNotNone(self.trustor_project_id)
 
         # Create a trustor User
-        self.trustor_username = data_utils.rand_name('user')
-        u_desc = self.trustor_username + 'description'
-        u_email = self.trustor_username + '@testmail.xx'
-        self.trustor_password = data_utils.rand_password()
+        trustor_username = data_utils.rand_name('user')
+        u_desc = trustor_username + 'description'
+        u_email = trustor_username + '@testmail.xx'
+        trustor_password = data_utils.rand_password()
         user = self.users_client.create_user(
-            name=self.trustor_username,
+            name=trustor_username,
             description=u_desc,
-            password=self.trustor_password,
+            password=trustor_password,
             email=u_email,
             project_id=self.trustor_project_id,
-            domain_id='default')['user']
+            domain_id=CONF.identity.default_domain_id)['user']
         self.trustor_user_id = user['id']
 
         # And two roles, one we'll delegate and one we won't
@@ -95,12 +95,12 @@ class BaseTrustsV3Test(base.BaseIdentityV3AdminTest):
         # Initialize a new client with the trustor credentials
         creds = common_creds.get_credentials(
             identity_version='v3',
-            username=self.trustor_username,
-            password=self.trustor_password,
-            user_domain_id='default',
-            tenant_name=self.trustor_project_name,
-            project_domain_id='default',
-            domain_id='default')
+            username=trustor_username,
+            password=trustor_password,
+            user_domain_id=CONF.identity.default_domain_id,
+            tenant_name=trustor_project_name,
+            project_domain_id=CONF.identity.default_domain_id,
+            domain_id=CONF.identity.default_domain_id)
         os = clients.Manager(credentials=creds)
         self.trustor_client = os.trusts_client
 
@@ -233,10 +233,12 @@ class TrustsV3TestJSON(BaseTrustsV3Test):
         # For example, when creating a trust, we will set the expiry time of
         # the trust to 2015-02-17T17:34:01.907051Z. However, if we make a GET
         # request on the trust, the response will contain the time rounded up
-        # to 2015-02-17T17:34:02.000000Z. That is why we shouldn't set flag
-        # "subsecond" to True when we invoke timeutils.isotime(...) to avoid
-        # problems with rounding.
-        expires_str = timeutils.isotime(at=expires_at)
+        # to 2015-02-17T17:34:02.000000Z. That is why we set microsecond to
+        # 0 when we invoke isoformat to avoid problems with rounding.
+        expires_at = expires_at.replace(microsecond=0)
+        # NOTE(ekhugen) Python datetime does not support military timezones
+        # since we used UTC we'll add the Z so our compare works.
+        expires_str = expires_at.isoformat() + 'Z'
 
         trust = self.create_trust(expires=expires_str)
         self.validate_trust(trust, expires=expires_str)
@@ -265,7 +267,7 @@ class TrustsV3TestJSON(BaseTrustsV3Test):
         self.assertEqual(1, len(trusts_get))
         self.validate_trust(trusts_get[0], summary=True)
 
-    @test.attr(type='smoke')
+    @decorators.attr(type='smoke')
     @decorators.idempotent_id('4773ebd5-ecbf-4255-b8d8-b63e6f72b65d')
     def test_get_trusts_all(self):
 
@@ -277,9 +279,9 @@ class TrustsV3TestJSON(BaseTrustsV3Test):
         # Listing trusts can be done by trustor, by trustee, or without
         # any filter if scoped to a project, so we must ensure token scope is
         # project for this test.
-        original_scope = self.os_adm.auth_provider.scope
-        set_scope(self.os_adm.auth_provider, 'project')
-        self.addCleanup(set_scope, self.os_adm.auth_provider, original_scope)
+        original_scope = self.os_admin.auth_provider.scope
+        set_scope(self.os_admin.auth_provider, 'project')
+        self.addCleanup(set_scope, self.os_admin.auth_provider, original_scope)
         trusts_get = self.trusts_client.list_trusts()['trusts']
         trusts = [t for t in trusts_get
                   if t['id'] == self.trust_id]

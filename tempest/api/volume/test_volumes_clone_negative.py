@@ -17,20 +17,19 @@ from tempest.api.volume import base
 from tempest import config
 from tempest.lib import decorators
 from tempest.lib import exceptions
-from tempest import test
 
 CONF = config.CONF
 
 
-class VolumesV2CloneNegativeTest(base.BaseVolumeTest):
+class VolumesCloneNegativeTest(base.BaseVolumeTest):
 
     @classmethod
     def skip_checks(cls):
-        super(VolumesV2CloneNegativeTest, cls).skip_checks()
+        super(VolumesCloneNegativeTest, cls).skip_checks()
         if not CONF.volume_feature_enabled.clone:
             raise cls.skipException("Cinder volume clones are disabled")
 
-    @test.attr(type=['negative'])
+    @decorators.attr(type=['negative'])
     @decorators.idempotent_id('9adae371-a257-43a5-459a-dc7c88e66e0e')
     def test_create_from_volume_decreasing_size(self):
         # Creates a volume from another volume passing a size different from
@@ -43,7 +42,3 @@ class VolumesV2CloneNegativeTest(base.BaseVolumeTest):
                           self.volumes_client.create_volume,
                           size=src_size - 1,
                           source_volid=src_vol['id'])
-
-
-class VolumesV1CloneNegativeTest(VolumesV2CloneNegativeTest):
-    _api_version = 1

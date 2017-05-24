@@ -159,7 +159,6 @@ class Manager(clients.ServiceClients):
         self.aggregates_client = self.compute.AggregatesClient()
         self.services_client = self.compute.ServicesClient()
         self.tenant_usages_client = self.compute.TenantUsagesClient()
-        self.baremetal_nodes_client = self.compute.BaremetalNodesClient()
         self.hosts_client = self.compute.HostsClient()
         self.hypervisor_client = self.compute.HypervisorClient()
         self.instance_usages_audit_log_client = (
@@ -168,11 +167,10 @@ class Manager(clients.ServiceClients):
 
         # NOTE: The following client needs special timeout values because
         # the API is a proxy for the other component.
-        params_volume = {}
-        for _key in ('build_interval', 'build_timeout'):
-            _value = self.parameters['volume'].get(_key)
-            if _value:
-                params_volume[_key] = _value
+        params_volume = {
+            'build_interval': CONF.volume.build_interval,
+            'build_timeout': CONF.volume.build_timeout
+        }
         self.volumes_extensions_client = self.compute.VolumesClient(
             **params_volume)
         self.compute_versions_client = self.compute.VersionsClient(
@@ -229,6 +227,12 @@ class Manager(clients.ServiceClients):
         self.groups_client = self.identity_v3.GroupsClient(**params_v3)
         self.identity_versions_v3_client = self.identity_v3.VersionsClient(
             **params_v3)
+        self.oauth_consumers_client = self.identity_v3.OAUTHConsumerClient(
+            **params_v3)
+        self.domain_config_client = self.identity_v3.DomainConfigurationClient(
+            **params_v3)
+        self.endpoint_filter_client = \
+            self.identity_v3.EndPointsFilterClient(**params_v3)
 
         # Token clients do not use the catalog. They only need default_params.
         # They read auth_url, so they should only be set if the corresponding
@@ -262,15 +266,20 @@ class Manager(clients.ServiceClients):
         self.snapshot_manage_v2_client = self.volume_v2.SnapshotManageClient()
         self.snapshots_client = self.volume_v1.SnapshotsClient()
         self.snapshots_v2_client = self.volume_v2.SnapshotsClient()
+        self.volume_manage_v2_client = self.volume_v2.VolumeManageClient()
         self.volumes_client = self.volume_v1.VolumesClient()
         self.volumes_v2_client = self.volume_v2.VolumesClient()
+        self.volumes_v3_client = self.volume_v3.VolumesClient()
         self.volume_v3_messages_client = self.volume_v3.MessagesClient()
+        self.volume_v3_versions_client = self.volume_v3.VersionsClient()
         self.volume_types_client = self.volume_v1.TypesClient()
         self.volume_types_v2_client = self.volume_v2.TypesClient()
         self.volume_hosts_client = self.volume_v1.HostsClient()
         self.volume_hosts_v2_client = self.volume_v2.HostsClient()
         self.volume_quotas_client = self.volume_v1.QuotasClient()
         self.volume_quotas_v2_client = self.volume_v2.QuotasClient()
+        self.volume_quota_classes_v2_client = \
+            self.volume_v2.QuotaClassesClient()
         self.volumes_extension_client = self.volume_v1.ExtensionsClient()
         self.volumes_v2_extension_client = self.volume_v2.ExtensionsClient()
         self.volume_availability_zone_client = \
@@ -283,6 +292,8 @@ class Manager(clients.ServiceClients):
             self.volume_v2.CapabilitiesClient()
         self.volume_scheduler_stats_v2_client = \
             self.volume_v2.SchedulerStatsClient()
+        self.volume_transfers_v2_client = \
+            self.volume_v2.TransfersClient()
 
     def _set_object_storage_clients(self):
         # Mandatory parameters (always defined)
@@ -290,6 +301,8 @@ class Manager(clients.ServiceClients):
 
         self.account_client = object_storage.AccountClient(self.auth_provider,
                                                            **params)
+        self.bulk_client = object_storage.BulkMiddlewareClient(
+            self.auth_provider, **params)
         self.capabilities_client = object_storage.CapabilitiesClient(
             self.auth_provider, **params)
         self.container_client = object_storage.ContainerClient(

@@ -133,7 +133,7 @@ class ServerActionsTestJSON(base.BaseV2ComputeTest):
             self.assertGreater(new_boot_time, boot_time,
                                '%s > %s' % (new_boot_time, boot_time))
 
-    @test.attr(type='smoke')
+    @decorators.attr(type='smoke')
     @decorators.idempotent_id('2cb1baf6-ac8d-4429-bf0d-ba8a0ba53e32')
     def test_reboot_server_hard(self):
         # The server should be power cycled
@@ -144,6 +144,18 @@ class ServerActionsTestJSON(base.BaseV2ComputeTest):
     def test_reboot_server_soft(self):
         # The server should be signaled to reboot gracefully
         self._test_reboot_server('SOFT')
+
+    @decorators.idempotent_id('1d1c9104-1b0a-11e7-a3d4-fa163e65f5ce')
+    def test_remove_server_all_security_groups(self):
+        server = self.create_test_server(wait_until='ACTIVE')
+
+        # Remove all Security group
+        self.client.remove_security_group(
+            server['id'], name=server['security_groups'][0]['name'])
+
+        # Verify all Security group
+        server = self.client.show_server(server['id'])['server']
+        self.assertNotIn('security_groups', server)
 
     def _rebuild_server_and_check(self, image_ref):
         rebuilt_server = (self.client.rebuild_server(self.server_id, image_ref)
@@ -156,6 +168,9 @@ class ServerActionsTestJSON(base.BaseV2ComputeTest):
 
     @decorators.idempotent_id('aaa6cdf3-55a7-461a-add9-1c8596b9a07c')
     def test_rebuild_server(self):
+        # Get the IPs the server has before rebuilding it
+        original_addresses = (self.client.show_server(self.server_id)['server']
+                              ['addresses'])
         # The server should be rebuilt using the provided image and data
         meta = {'rebuild': 'server'}
         new_name = data_utils.rand_name(self.__class__.__name__ + '-server')
@@ -185,6 +200,7 @@ class ServerActionsTestJSON(base.BaseV2ComputeTest):
         rebuilt_image_id = server['image']['id']
         self.assertTrue(self.image_ref_alt.endswith(rebuilt_image_id))
         self.assertEqual(new_name, server['name'])
+        self.assertEqual(original_addresses, server['addresses'])
 
         if CONF.validation.run_validation:
             # Authentication is attempted in the following order of priority:
@@ -325,9 +341,9 @@ class ServerActionsTestJSON(base.BaseV2ComputeTest):
         # prefer glance v1 for the compute API tests since the compute image
         # API proxy was written for glance v1.
         if CONF.image_feature_enabled.api_v1:
-            glance_client = self.os.image_client
+            glance_client = self.os_primary.image_client
         elif CONF.image_feature_enabled.api_v2:
-            glance_client = self.os.image_client_v2
+            glance_client = self.os_primary.image_client_v2
         else:
             raise lib_exc.InvalidConfiguration(
                 'Either api_v1 or api_v2 must be True in '

@@ -13,7 +13,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from oslo_log import log as logging
 import testtools
 
 from tempest.api.compute import base
@@ -24,8 +23,6 @@ from tempest import config
 from tempest.lib import decorators
 
 CONF = config.CONF
-
-LOG = logging.getLogger(__name__)
 
 
 class AttachVolumeTestJSON(base.BaseV2ComputeTest):
@@ -55,6 +52,7 @@ class AttachVolumeTestJSON(base.BaseV2ComputeTest):
             validatable=True,
             wait_until='ACTIVE',
             adminPass=self.image_ssh_password)
+        self.addCleanup(self.delete_server, server['id'])
         # Record addresses so that we can ssh later
         server['addresses'] = self.servers_client.list_addresses(
             server['id'])['addresses']
@@ -65,6 +63,20 @@ class AttachVolumeTestJSON(base.BaseV2ComputeTest):
         # Stop and Start a server with an attached volume, ensuring that
         # the volume remains attached.
         server = self._create_server()
+
+        # NOTE(andreaf) Create one remote client used throughout the test.
+        if CONF.validation.run_validation:
+            linux_client = remote_client.RemoteClient(
+                self.get_server_ip(server),
+                self.image_ssh_user,
+                self.image_ssh_password,
+                self.validation_resources['keypair']['private_key'],
+                server=server,
+                servers_client=self.servers_client)
+            # NOTE(andreaf) We need to ensure the ssh key has been
+            # injected in the guest before we power cycle
+            linux_client.validate_authentication()
+
         volume = self.create_volume()
         attachment = self.attach_volume(server, volume,
                                         device=('/dev/%s' % self.device))
@@ -78,14 +90,6 @@ class AttachVolumeTestJSON(base.BaseV2ComputeTest):
                                        'ACTIVE')
 
         if CONF.validation.run_validation:
-            linux_client = remote_client.RemoteClient(
-                self.get_server_ip(server),
-                self.image_ssh_user,
-                self.image_ssh_password,
-                self.validation_resources['keypair']['private_key'],
-                server=server,
-                servers_client=self.servers_client)
-
             disks = linux_client.get_disks()
             device_name_to_match = '\n' + self.device + ' '
             self.assertIn(device_name_to_match, disks)
@@ -103,14 +107,6 @@ class AttachVolumeTestJSON(base.BaseV2ComputeTest):
                                        'ACTIVE')
 
         if CONF.validation.run_validation:
-            linux_client = remote_client.RemoteClient(
-                self.get_server_ip(server),
-                self.image_ssh_user,
-                self.image_ssh_password,
-                self.validation_resources['keypair']['private_key'],
-                server=server,
-                servers_client=self.servers_client)
-
             disks = linux_client.get_disks()
             self.assertNotIn(device_name_to_match, disks)
 
@@ -118,51 +114,35 @@ class AttachVolumeTestJSON(base.BaseV2ComputeTest):
     def test_list_get_volume_attachments(self):
         # List volume attachment of the server
         server = self._create_server()
-        volume = self.create_volume()
-        attachment = self.attach_volume(server, volume,
-                                        device=('/dev/%s' % self.device))
+        volume_1st = self.create_volume()
+        attachment_1st = self.attach_volume(server, volume_1st,
+                                            device=('/dev/%s' % self.device))
         body = self.servers_client.list_volume_attachments(
             server['id'])['volumeAttachments']
         self.assertEqual(1, len(body))
-        self.assertIn(attachment, body)
+        self.assertIn(attachment_1st, body)
 
         # Get volume attachment of the server
         body = self.servers_client.show_volume_attachment(
             server['id'],
-            attachment['id'])['volumeAttachment']
+            attachment_1st['id'])['volumeAttachment']
         self.assertEqual(server['id'], body['serverId'])
-        self.assertEqual(volume['id'], body['volumeId'])
-        self.assertEqual(attachment['id'], body['id'])
+        self.assertEqual(volume_1st['id'], body['volumeId'])
+        self.assertEqual(attachment_1st['id'], body['id'])
 
-    @decorators.idempotent_id('757d488b-a951-4bc7-b3cd-f417028da08a')
-    def test_list_get_two_volume_attachments(self):
-        # NOTE: This test is using the volume device auto-assignment
-        # without specifying the device ("/dev/sdb", etc). The feature
-        # is supported since Nova Liberty release or later. So this should
-        # be skipped on older clouds.
-        server = self._create_server()
-        volume_1st = self.create_volume()
+        # attach one more volume to server
         volume_2nd = self.create_volume()
-        attachment_1st = self.attach_volume(server, volume_1st)
         attachment_2nd = self.attach_volume(server, volume_2nd)
-
         body = self.servers_client.list_volume_attachments(
             server['id'])['volumeAttachments']
         self.assertEqual(2, len(body))
 
-        body = self.servers_client.show_volume_attachment(
-            server['id'],
-            attachment_1st['id'])['volumeAttachment']
-        self.assertEqual(server['id'], body['serverId'])
-        self.assertEqual(attachment_1st['volumeId'], body['volumeId'])
-        self.assertEqual(attachment_1st['id'], body['id'])
-
-        body = self.servers_client.show_volume_attachment(
-            server['id'],
-            attachment_2nd['id'])['volumeAttachment']
-        self.assertEqual(server['id'], body['serverId'])
-        self.assertEqual(attachment_2nd['volumeId'], body['volumeId'])
-        self.assertEqual(attachment_2nd['id'], body['id'])
+        for attachment in [attachment_1st, attachment_2nd]:
+            body = self.servers_client.show_volume_attachment(
+                server['id'], attachment['id'])['volumeAttachment']
+            self.assertEqual(server['id'], body['serverId'])
+            self.assertEqual(attachment['volumeId'], body['volumeId'])
+            self.assertEqual(attachment['id'], body['id'])
 
 
 class AttachVolumeShelveTestJSON(AttachVolumeTestJSON):

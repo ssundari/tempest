@@ -13,6 +13,15 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 
+import base64
+import socket
+import ssl
+import struct
+import textwrap
+
+import six
+from six.moves.urllib import parse as urlparse
+
 from oslo_log import log as logging
 from oslo_utils import excutils
 
@@ -21,6 +30,11 @@ from tempest.common import waiters
 from tempest import config
 from tempest.lib.common import rest_client
 from tempest.lib.common.utils import data_utils
+
+if six.PY2:
+    ord_func = ord
+else:
+    ord_func = int
 
 CONF = config.CONF
 
@@ -113,14 +127,23 @@ def create_test_server(clients, validatable=False, validation_resources=None,
             if wait_until is None:
                 wait_until = 'ACTIVE'
 
+        if 'user_data' not in kwargs:
+            # If nothing overrides the default user data script then run
+            # a simple script on the host to print networking info. This is
+            # to aid in debugging ssh failures.
+            script = '''
+                     #!/bin/sh
+                     echo "Printing {user} user authorized keys"
+                     cat ~{user}/.ssh/authorized_keys || true
+                     '''.format(user=CONF.validation.image_ssh_user)
+            script_clean = textwrap.dedent(script).lstrip().encode('utf8')
+            script_b64 = base64.b64encode(script_clean)
+            kwargs['user_data'] = script_b64
+
     if volume_backed:
         volume_name = data_utils.rand_name(__name__ + '-volume')
         volumes_client = clients.volumes_v2_client
-        name_field = 'name'
-        if not CONF.volume_feature_enabled.api_v2:
-            volumes_client = clients.volumes_client
-            name_field = 'display_name'
-        params = {name_field: volume_name,
+        params = {'name': volume_name,
                   'imageRef': image_id,
                   'size': CONF.volume.volume_size}
         volume = volumes_client.create_volume(**params)
@@ -210,3 +233,91 @@ def shelve_server(servers_client, server_id, force_shelve_offload=False):
             servers_client.shelve_offload_server(server_id)
             waiters.wait_for_server_status(servers_client, server_id,
                                            'SHELVED_OFFLOADED')
+
+
+def create_websocket(url):
+    url = urlparse.urlparse(url)
+    if url.scheme == 'https':
+        client_socket = ssl.wrap_socket(socket.socket(socket.AF_INET,
+                                                      socket.SOCK_STREAM))
+    else:
+        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    client_socket.connect((url.hostname, url.port))
+    # Turn the Socket into a WebSocket to do the communication
+    return _WebSocket(client_socket, url)
+
+
+class _WebSocket(object):
+    def __init__(self, client_socket, url):
+        """Contructor for the WebSocket wrapper to the socket."""
+        self._socket = client_socket
+        # Upgrade the HTTP connection to a WebSocket
+        self._upgrade(url)
+
+    def receive_frame(self):
+        """Wrapper for receiving data to parse the WebSocket frame format"""
+        # We need to loop until we either get some bytes back in the frame
+        # or no data was received (meaning the socket was closed).  This is
+        # done to handle the case where we get back some empty frames
+        while True:
+            header = self._socket.recv(2)
+            # If we didn't receive any data, just return None
+            if not header:
+                return None
+            # We will make the assumption that we are only dealing with
+            # frames less than 125 bytes here (for the negotiation) and
+            # that only the 2nd byte contains the length, and since the
+            # server doesn't do masking, we can just read the data length
+            if ord_func(header[1]) & 127 > 0:
+                return self._socket.recv(ord_func(header[1]) & 127)
+
+    def send_frame(self, data):
+        """Wrapper for sending data to add in the WebSocket frame format."""
+        frame_bytes = list()
+        # For the first byte, want to say we are sending binary data (130)
+        frame_bytes.append(130)
+        # Only sending negotiation data so don't need to worry about > 125
+        # We do need to add the bit that says we are masking the data
+        frame_bytes.append(len(data) | 128)
+        # We don't really care about providing a random mask for security
+        # So we will just hard-code a value since a test program
+        mask = [7, 2, 1, 9]
+        for i in range(len(mask)):
+            frame_bytes.append(mask[i])
+        # Mask each of the actual data bytes that we are going to send
+        for i in range(len(data)):
+            frame_bytes.append(ord_func(data[i]) ^ mask[i % 4])
+        # Convert our integer list to a binary array of bytes
+        frame_bytes = struct.pack('!%iB' % len(frame_bytes), * frame_bytes)
+        self._socket.sendall(frame_bytes)
+
+    def close(self):
+        """Helper method to close the connection."""
+        # Close down the real socket connection and exit the test program
+        if self._socket is not None:
+            self._socket.shutdown(1)
+            self._socket.close()
+            self._socket = None
+
+    def _upgrade(self, url):
+        """Upgrade the HTTP connection to a WebSocket and verify."""
+        # The real request goes to the /websockify URI always
+        reqdata = 'GET /websockify HTTP/1.1\r\n'
+        reqdata += 'Host: %s:%s\r\n' % (url.hostname, url.port)
+        # Tell the HTTP Server to Upgrade the connection to a WebSocket
+        reqdata += 'Upgrade: websocket\r\nConnection: Upgrade\r\n'
+        # The token=xxx is sent as a Cookie not in the URI
+        reqdata += 'Cookie: %s\r\n' % url.query
+        # Use a hard-coded WebSocket key since a test program
+        reqdata += 'Sec-WebSocket-Key: x3JJHMbDL1EzLkh9GBhXDw==\r\n'
+        reqdata += 'Sec-WebSocket-Version: 13\r\n'
+        # We are choosing to use binary even though browser may do Base64
+        reqdata += 'Sec-WebSocket-Protocol: binary\r\n\r\n'
+        # Send the HTTP GET request and get the response back
+        self._socket.sendall(reqdata.encode('utf8'))
+        self.response = data = self._socket.recv(4096)
+        # Loop through & concatenate all of the data in the response body
+        while data and self.response.find(b'\r\n\r\n') < 0:
+            data = self._socket.recv(4096)
+            self.response += data

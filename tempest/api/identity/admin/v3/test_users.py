@@ -42,11 +42,7 @@ class UsersV3TestJSON(base.BaseIdentityV3AdminTest):
         # Delete the User at the end of this method
         self.addCleanup(self.users_client.delete_user, user['id'])
         # Creating second project for updation
-        project = self.projects_client.create_project(
-            data_utils.rand_name('project'),
-            description=data_utils.rand_name('project-desc'))['project']
-        # Delete the Project at the end of this method
-        self.addCleanup(self.projects_client.delete_project, project['id'])
+        project = self.setup_test_project()
         # Updating user details with new values
         u_name2 = data_utils.rand_name('user2')
         u_email2 = u_name2 + '@testmail.tm'
@@ -102,11 +98,7 @@ class UsersV3TestJSON(base.BaseIdentityV3AdminTest):
         # List the projects that a user has access upon
         assigned_project_ids = list()
         fetched_project_ids = list()
-        u_project = self.projects_client.create_project(
-            data_utils.rand_name('project'),
-            description=data_utils.rand_name('project-desc'))['project']
-        # Delete the Project at the end of this method
-        self.addCleanup(self.projects_client.delete_project, u_project['id'])
+        u_project = self.setup_test_project()
         # Create a user.
         u_name = data_utils.rand_name('user')
         u_desc = u_name + 'description'
@@ -118,23 +110,15 @@ class UsersV3TestJSON(base.BaseIdentityV3AdminTest):
         # Delete the User at the end of this method
         self.addCleanup(self.users_client.delete_user, user_body['id'])
         # Creating Role
-        role_body = self.roles_client.create_role(
-            name=data_utils.rand_name('role'))['role']
-        # Delete the Role at the end of this method
-        self.addCleanup(self.roles_client.delete_role, role_body['id'])
+        role_body = self.setup_test_role()
 
         user = self.users_client.show_user(user_body['id'])['user']
         role = self.roles_client.show_role(role_body['id'])['role']
         for _ in range(2):
             # Creating project so as to assign role
-            project_body = self.projects_client.create_project(
-                data_utils.rand_name('project'),
-                description=data_utils.rand_name('project-desc'))['project']
+            project_body = self.setup_test_project()
             project = self.projects_client.show_project(
                 project_body['id'])['project']
-            # Delete the Project at the end of this method
-            self.addCleanup(
-                self.projects_client.delete_project, project_body['id'])
             # Assigning roles to user on project
             self.roles_client.create_user_role_on_project(project['id'],
                                                           user['id'],
@@ -163,8 +147,8 @@ class UsersV3TestJSON(base.BaseIdentityV3AdminTest):
                           'Security compliance not available.')
     @decorators.idempotent_id('568cd46c-ee6c-4ab4-a33a-d3791931979e')
     def test_password_history_not_enforced_in_admin_reset(self):
-        old_password = self.os.credentials.password
-        user_id = self.os.credentials.user_id
+        old_password = self.os_primary.credentials.password
+        user_id = self.os_primary.credentials.user_id
 
         new_password = data_utils.rand_password()
         self.users_client.update_user(user_id, password=new_password)

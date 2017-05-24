@@ -13,6 +13,7 @@
 #    under the License.
 
 from tempest.api.volume import base
+from tempest.common import tempest_fixtures as fixtures
 from tempest.common import waiters
 from tempest.lib.common.utils import data_utils
 from tempest.lib import decorators
@@ -21,16 +22,27 @@ QUOTA_KEYS = ['gigabytes', 'snapshots', 'volumes', 'backups']
 QUOTA_USAGE_KEYS = ['reserved', 'limit', 'in_use']
 
 
-class BaseVolumeQuotasAdminV2TestJSON(base.BaseVolumeAdminTest):
+class BaseVolumeQuotasAdminTestJSON(base.BaseVolumeAdminTest):
     force_tenant_isolation = True
 
     credentials = ['primary', 'alt', 'admin']
 
+    def setUp(self):
+        # NOTE(jeremy.zhang): Avoid conflicts with volume quota class tests.
+        self.useFixture(fixtures.LockFixture('volume_quotas'))
+        super(BaseVolumeQuotasAdminTestJSON, self).setUp()
+
     @classmethod
     def setup_credentials(cls):
-        super(BaseVolumeQuotasAdminV2TestJSON, cls).setup_credentials()
-        cls.demo_tenant_id = cls.os.credentials.tenant_id
+        super(BaseVolumeQuotasAdminTestJSON, cls).setup_credentials()
+        cls.demo_tenant_id = cls.os_primary.credentials.tenant_id
         cls.alt_client = cls.os_alt.volumes_client
+
+    @classmethod
+    def setup_clients(cls):
+        super(BaseVolumeQuotasAdminTestJSON, cls).setup_clients()
+        cls.transfer_client = cls.os_primary.volume_transfers_v2_client
+        cls.alt_transfer_client = cls.os_alt.volume_transfers_v2_client
 
     @decorators.idempotent_id('59eada70-403c-4cef-a2a3-a8ce2f1b07a0')
     def test_list_quotas(self):
@@ -74,7 +86,7 @@ class BaseVolumeQuotasAdminV2TestJSON(base.BaseVolumeAdminTest):
     @decorators.idempotent_id('18c51ae9-cb03-48fc-b234-14a19374dbed')
     def test_show_quota_usage(self):
         quota_usage = self.admin_quotas_client.show_quota_set(
-            self.os_adm.credentials.tenant_id,
+            self.os_admin.credentials.tenant_id,
             params={'usage': True})['quota_set']
         for key in QUOTA_KEYS:
             self.assertIn(key, quota_usage)
@@ -136,13 +148,13 @@ class BaseVolumeQuotasAdminV2TestJSON(base.BaseVolumeAdminTest):
             self.alt_client.tenant_id, params={'usage': True})['quota_set']
 
         # Creates a volume transfer
-        transfer = self.volumes_client.create_volume_transfer(
+        transfer = self.transfer_client.create_volume_transfer(
             volume_id=volume['id'])['transfer']
         transfer_id = transfer['id']
         auth_key = transfer['auth_key']
 
         # Accepts a volume transfer
-        self.alt_client.accept_volume_transfer(
+        self.alt_transfer_client.accept_volume_transfer(
             transfer_id, auth_key=auth_key)['transfer']
 
         # Verify volume transferred is available
@@ -169,7 +181,3 @@ class BaseVolumeQuotasAdminV2TestJSON(base.BaseVolumeAdminTest):
         self.assertEqual(primary_quota['gigabytes']['in_use'] -
                          volume['size'],
                          new_primary_quota['gigabytes']['in_use'])
-
-
-class VolumeQuotasAdminV1TestJSON(BaseVolumeQuotasAdminV2TestJSON):
-    _api_version = 1

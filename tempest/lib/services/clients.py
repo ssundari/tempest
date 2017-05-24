@@ -17,7 +17,9 @@
 import copy
 import importlib
 import inspect
+import warnings
 
+from debtcollector import removals
 from oslo_log import log as logging
 
 from tempest.lib import auth
@@ -29,7 +31,7 @@ from tempest.lib.services import image
 from tempest.lib.services import network
 from tempest.lib.services import volume
 
-
+warnings.simplefilter("once")
 LOG = logging.getLogger(__name__)
 
 
@@ -84,15 +86,15 @@ def available_modules():
     :raise PluginRegistrationException: if a plugin exposes a service_version
         already defined by Tempest or another plugin.
 
-    Examples:
+    Examples::
 
-        >>> from tempest import config
-        >>> params = {}
-        >>> for service_version in available_modules():
-        >>>     service = service_version.split('.')[0]
-        >>>     params[service] = config.service_client_config(service)
-        >>> service_clients = ServiceClients(creds, identity_uri,
-        >>>                                  client_parameters=params)
+        from tempest import config
+        params = {}
+        for service_version in available_modules():
+            service = service_version.split('.')[0]
+            params[service] = config.service_client_config(service)
+        service_clients = ServiceClients(creds, identity_uri,
+                                         client_parameters=params)
     """
     extra_service_versions = set([])
     _tempest_modules = set(tempest_modules())
@@ -175,17 +177,17 @@ class ClientsFactory(object):
             parameters cannot be deleted.
         :raise ImportError if the specified module_path cannot be imported
 
-        Example:
+        Example::
 
-            >>> # Get credentials and an auth_provider
-            >>> clients = ClientsFactory(
-            >>>     module_path='my_service.my_service_clients',
-            >>>     client_names=['ServiceClient1', 'ServiceClient2'],
-            >>>     auth_provider=auth_provider,
-            >>>     service='my_service',
-            >>>     region='region1')
-            >>> my_api_client = clients.MyApiClient()
-            >>> my_api_client_region2 = clients.MyApiClient(region='region2')
+            # Get credentials and an auth_provider
+            clients = ClientsFactory(
+                module_path='my_service.my_service_clients',
+                client_names=['ServiceClient1', 'ServiceClient2'],
+                auth_provider=auth_provider,
+                service='my_service',
+                region='region1')
+            my_api_client = clients.MyApiClient()
+            my_api_client_region2 = clients.MyApiClient(region='region2')
 
         """
         # Import the module. If it's not importable, the raised exception
@@ -256,13 +258,19 @@ class ServiceClients(object):
     It hides some of the complexity from the authorization and configuration
     layers.
 
-    Examples:
+    Examples::
 
-        >>> from tempest.lib.services import clients
-        >>> johndoe = cred_provider.get_creds_by_role(['johndoe'])
-        >>> johndoe_clients = clients.ServiceClients(johndoe,
-        >>>                                                  identity_uri)
-        >>> johndoe_servers = johndoe_clients.servers_client.list_servers()
+        # johndoe is a tempest.lib.auth.Credentials type instance
+        johndoe_clients = clients.ServiceClients(johndoe, identity_uri)
+
+        # List servers in default region
+        johndoe_servers_client = johndoe_clients.compute.ServersClient()
+        johndoe_servers = johndoe_servers_client.list_servers()
+
+        # List servers in Region B
+        johndoe_servers_client_B = johndoe_clients.compute.ServersClient(
+            region='B')
+        johndoe_servers = johndoe_servers_client_B.list_servers()
 
     """
     # NOTE(andreaf) This class does not depend on tempest configuration
@@ -271,6 +279,7 @@ class ServiceClients(object):
     # initialises this class using values from tempest CONF object. The wrapper
     # class should only be used by tests hosted in Tempest.
 
+    @removals.removed_kwarg('client_parameters')
     def __init__(self, credentials, identity_uri, region=None, scope='project',
                  disable_ssl_certificate_validation=True, ca_certs=None,
                  trace_requests='', client_parameters=None):
@@ -286,7 +295,12 @@ class ServiceClients(object):
         Parameters dscv, ca_certs and trace_requests all apply to the auth
         provider as well as any service clients provided by this manager.
 
-        Any other client parameter must be set via client_parameters.
+        Any other client parameter should be set via ClientsRegistry.
+
+        Client parameter used to be set via client_parameters, but this is
+        deprecated, and it is actually already not honoured
+        anymore: https://launchpad.net/bugs/1680915.
+
         The list of available parameters is defined in the service clients
         interfaces. For reference, most clients will accept 'region',
         'service', 'endpoint_type', 'build_timeout' and 'build_interval', which
@@ -301,14 +315,18 @@ class ServiceClients(object):
         - Volume client for 'volume' accepts 'default_volume_size'
         - Servers client from 'compute' accepts 'enable_instance_password'
 
-        Examples:
+        If Tempest configuration is used, parameters will be loaded in the
+        Registry automatically for all service client (Tempest stable ones
+        and plugins).
 
-            >>> identity_params = config.service_client_config('identity')
-            >>> params = {
-            >>>     'identity': identity_params,
-            >>>     'compute': {'region': 'region2'}}
-            >>> manager = lib_manager.Manager(
-            >>>     my_creds, identity_uri, client_parameters=params)
+        Examples::
+
+            identity_params = config.service_client_config('identity')
+            params = {
+                'identity': identity_params,
+                'compute': {'region': 'region2'}}
+            manager = lib_manager.Manager(
+                my_creds, identity_uri, client_parameters=params)
 
         :param credentials: An instance of `auth.Credentials`
         :param identity_uri: URI of the identity API. This should be a
@@ -324,15 +342,6 @@ class ServiceClients(object):
             name, as declared in `service_clients.available_modules()` except
             for the version. Values are dictionaries of parameters that are
             going to be passed to all clients in the service client module.
-
-        Examples:
-
-            >>> params_service_x = {'param_name': 'param_value'}
-            >>> client_parameters = { 'service_x': params_service_x }
-
-            >>> params_service_y = config.service_client_config('service_y')
-            >>> client_parameters['service_y'] = params_service_y
-
         """
         self._registered_services = set([])
         self.credentials = credentials

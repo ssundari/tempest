@@ -40,10 +40,7 @@ class TestVolumeMigrateRetypeAttached(manager.ScenarioTest):
     @classmethod
     def setup_clients(cls):
         super(TestVolumeMigrateRetypeAttached, cls).setup_clients()
-        if CONF.volume_feature_enabled.api_v1:
-            cls.admin_volume_types_client = cls.os_adm.volume_types_client
-        else:
-            cls.admin_volume_types_client = cls.os_adm.volume_types_v2_client
+        cls.admin_volume_types_client = cls.os_admin.volume_types_v2_client
 
     @classmethod
     def skip_checks(cls):
@@ -91,7 +88,7 @@ class TestVolumeMigrateRetypeAttached(manager.ScenarioTest):
         waiters.wait_for_volume_retype(self.volumes_client,
                                        volume_id, new_volume_type)
 
-    @test.attr(type='slow')
+    @decorators.attr(type='slow')
     @decorators.idempotent_id('deadd2c2-beef-4dce-98be-f86765ff311b')
     @test.services('compute', 'volume')
     def test_volume_migrate_attached(self):

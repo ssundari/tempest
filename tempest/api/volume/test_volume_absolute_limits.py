@@ -21,14 +21,17 @@ from tempest.lib import decorators
 CONF = config.CONF
 
 
-class AbsoluteLimitsV2Tests(base.BaseVolumeTest):
+# NOTE(zhufl): This inherits from BaseVolumeAdminTest because
+# it requires force_tenant_isolation=True, which need admin
+# credentials to create non-admin users for the tests.
+class AbsoluteLimitsTests(base.BaseVolumeAdminTest):
 
     # avoid existing volumes of pre-defined tenant
     force_tenant_isolation = True
 
     @classmethod
     def resource_setup(cls):
-        super(AbsoluteLimitsV2Tests, cls).resource_setup()
+        super(AbsoluteLimitsTests, cls).resource_setup()
         # Create a shared volume for tests
         cls.volume = cls.create_volume()
 
@@ -46,7 +49,3 @@ class AbsoluteLimitsV2Tests(base.BaseVolumeTest):
         self.assertEqual(absolute_limits['totalSnapshotsUsed'], 0)
         self.assertEqual(absolute_limits['totalBackupsUsed'], 0)
         self.assertEqual(absolute_limits['totalBackupGigabytesUsed'], 0)
-
-
-class AbsoluteLimitsV1Tests(AbsoluteLimitsV2Tests):
-    _api_version = 1

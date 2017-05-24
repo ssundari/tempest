@@ -13,18 +13,14 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 from tempest.api.volume import base
-from tempest import config
 from tempest.lib import decorators
-
-
-CONF = config.CONF
 
 
 def _get_host(host):
     return host.split('@')[0]
 
 
-class VolumesServicesV2TestJSON(base.BaseVolumeAdminTest):
+class VolumesServicesTestJSON(base.BaseVolumeAdminTest):
     """Tests Volume Services API.
 
     volume service list requires admin privileges.
@@ -32,7 +28,7 @@ class VolumesServicesV2TestJSON(base.BaseVolumeAdminTest):
 
     @classmethod
     def resource_setup(cls):
-        super(VolumesServicesV2TestJSON, cls).resource_setup()
+        super(VolumesServicesTestJSON, cls).resource_setup()
         cls.services = (cls.admin_volume_services_client.list_services()
                         ['services'])
         # NOTE: Cinder service-list API returns the list contains
@@ -71,6 +67,20 @@ class VolumesServicesV2TestJSON(base.BaseVolumeAdminTest):
         # on order.
         self.assertEqual(sorted(s1), sorted(s2))
 
+    @decorators.idempotent_id('67ec6902-f91d-4dec-91fa-338523208bbc')
+    def test_get_service_by_volume_host_name(self):
+        volume_id = self.create_volume()['id']
+        volume = self.admin_volume_client.show_volume(volume_id)['volume']
+        hostname = _get_host(volume['os-vol-host-attr:host'])
+
+        services = (self.admin_volume_services_client.list_services(
+            host=hostname, binary='cinder-volume')['services'])
+
+        self.assertNotEqual(0, len(services),
+                            'cinder-volume not found on host %s' % hostname)
+        self.assertEqual(hostname, _get_host(services[0]['host']))
+        self.assertEqual('cinder-volume', services[0]['binary'])
+
     @decorators.idempotent_id('ffa6167c-4497-4944-a464-226bbdb53908')
     def test_get_service_by_service_and_host_name(self):
 
@@ -80,7 +90,3 @@ class VolumesServicesV2TestJSON(base.BaseVolumeAdminTest):
         self.assertNotEqual(0, len(services))
         self.assertEqual(self.host_name, _get_host(services[0]['host']))
         self.assertEqual(self.binary_name, services[0]['binary'])
-
-
-class VolumesServicesV1TestJSON(VolumesServicesV2TestJSON):
-    _api_version = 1

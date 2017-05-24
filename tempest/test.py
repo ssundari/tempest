@@ -29,7 +29,6 @@ from tempest.common import credentials_factory as credentials
 from tempest.common import fixed_network
 import tempest.common.validation_resources as vresources
 from tempest import config
-from tempest import exceptions
 from tempest.lib.common import cred_client
 from tempest.lib import decorators
 from tempest.lib import exceptions as lib_exc
@@ -45,22 +44,18 @@ idempotent_id = debtcollector.moves.moved_function(
     version='Mitaka', removal_version='?')
 
 
-def attr(**kwargs):
-    """A decorator which applies the testtools attr decorator
+related_bug = debtcollector.moves.moved_function(
+    decorators.related_bug, 'related_bug', __name__,
+    version='Pike', removal_version='?')
 
-    This decorator applies the testtools.testcase.attr if it is in the list of
-    attributes to testtools we want to apply.
-    """
 
-    def decorator(f):
-        if 'type' in kwargs and isinstance(kwargs['type'], str):
-            f = testtools.testcase.attr(kwargs['type'])(f)
-        elif 'type' in kwargs and isinstance(kwargs['type'], list):
-            for attr in kwargs['type']:
-                f = testtools.testcase.attr(attr)(f)
-        return f
+attr = debtcollector.moves.moved_function(
+    decorators.attr, 'attr', __name__,
+    version='Pike', removal_version='?')
 
-    return decorator
+
+class InvalidServiceTag(lib_exc.TempestException):
+    message = "Invalid service tag"
 
 
 def get_service_list():
@@ -82,13 +77,12 @@ def services(*args):
     exercised by a test case.
     """
     def decorator(f):
-        services = ['compute', 'image', 'baremetal', 'volume',
-                    'network', 'identity', 'object_storage']
+        known_services = get_service_list()
+
         for service in args:
-            if service not in services:
-                raise exceptions.InvalidServiceTag('%s is not a valid '
-                                                   'service' % service)
-        attr(type=list(args))(f)
+            if service not in known_services:
+                raise InvalidServiceTag('%s is not a valid service' % service)
+        decorators.attr(type=list(args))(f)
 
         @functools.wraps(f)
         def wrapper(self, *func_args, **func_kwargs):
@@ -134,35 +128,13 @@ def is_extension_enabled(extension_name, service):
         'object': CONF.object_storage_feature_enabled.discoverable_apis,
         'identity': CONF.identity_feature_enabled.api_extensions
     }
-    if len(config_dict[service]) == 0:
+    if not config_dict[service]:
         return False
     if config_dict[service][0] == 'all':
         return True
     if extension_name in config_dict[service]:
         return True
     return False
-
-
-def related_bug(bug, status_code=None):
-    """A decorator useful to know solutions from launchpad bug reports
-
-    @param bug: The launchpad bug number causing the test
-    @param status_code: The status code related to the bug report
-    """
-    def decorator(f):
-        @functools.wraps(f)
-        def wrapper(self, *func_args, **func_kwargs):
-            try:
-                return f(self, *func_args, **func_kwargs)
-            except Exception as exc:
-                exc_status_code = getattr(exc, 'status_code', None)
-                if status_code is None or status_code == exc_status_code:
-                    LOG.error('Hints: This test was made for the bug %s. '
-                              'The failure could be related to '
-                              'https://launchpad.net/bugs/%s', bug, bug)
-                raise exc
-        return wrapper
-    return decorator
 
 
 def is_scheduler_filter_enabled(filter_name):
@@ -177,7 +149,7 @@ def is_scheduler_filter_enabled(filter_name):
     """
 
     filters = CONF.compute_feature_enabled.scheduler_available_filters
-    if len(filters) == 0:
+    if not filters:
         return False
     if 'all' in filters:
         return True
@@ -359,16 +331,32 @@ class BaseTestCase(testtools.testcase.WithAttributes,
                 manager = cls.get_client_manager(
                     credential_type=credentials_type)
                 setattr(cls, 'os_%s' % credentials_type, manager)
+                # NOTE(jordanP): Tempest should use os_primary, os_admin
+                # and os_alt throughout its code base but we keep the aliases
+                # around for a while for Tempest plugins. Aliases should be
+                # removed eventually.
                 # Setup some common aliases
-                # TODO(andreaf) The aliases below are a temporary hack
-                # to avoid changing too much code in one patch. They should
-                # be removed eventually
                 if credentials_type == 'primary':
-                    cls.os = cls.manager = cls.os_primary
+                    cls.os = debtcollector.moves.moved_read_only_property(
+                        'os', 'os_primary', version='Pike',
+                        removal_version='Queens')
+                    cls.manager =\
+                        debtcollector.moves.moved_read_only_property(
+                            'manager', 'os_primary', version='Pike',
+                            removal_version='Queens')
                 if credentials_type == 'admin':
-                    cls.os_adm = cls.admin_manager = cls.os_admin
+                    cls.os_adm = debtcollector.moves.moved_read_only_property(
+                        'os_adm', 'os_admin', version='Pike',
+                        removal_version='Queens')
+                    cls.admin_manager =\
+                        debtcollector.moves.moved_read_only_property(
+                            'admin_manager', 'os_admin', version='Pike',
+                            removal_version='Queens')
                 if credentials_type == 'alt':
-                    cls.alt_manager = cls.os_alt
+                    cls.alt_manager =\
+                        debtcollector.moves.moved_read_only_property(
+                            'alt_manager', 'os_alt', version='Pike',
+                            removal_version='Queens')
             elif isinstance(credentials_type, list):
                 manager = cls.get_client_manager(roles=credentials_type[1:],
                                                  force_new=True)
@@ -483,7 +471,9 @@ class BaseTestCase(testtools.testcase.WithAttributes,
         """Returns a credentials provider
 
         If no credential provider exists yet creates one.
-        It uses self.identity_version if defined, or the configuration value
+        It always use the configuration value from identity.auth_version,
+        since we always want to provision accounts with the current version
+        of the identity API.
         """
         if (not hasattr(cls, '_creds_provider') or not cls._creds_provider or
                 not cls._creds_provider.name == cls.__name__):
@@ -492,8 +482,7 @@ class BaseTestCase(testtools.testcase.WithAttributes,
 
             cls._creds_provider = credentials.get_credentials_provider(
                 name=cls.__name__, network_resources=cls.network_resources,
-                force_tenant_isolation=force_tenant_isolation,
-                identity_version=cls.get_identity_version())
+                force_tenant_isolation=force_tenant_isolation)
         return cls._creds_provider
 
     @classmethod
@@ -642,12 +631,24 @@ class BaseTestCase(testtools.testcase.WithAttributes,
         return fixed_network.get_tenant_network(
             cred_provider, networks_client, CONF.compute.fixed_network_name)
 
-    def assertEmpty(self, list, msg=None):
-        if msg is None:
-            msg = "list is not empty: %s" % list
-        self.assertEqual(0, len(list), msg)
+    def assertEmpty(self, items, msg=None):
+        """Asserts whether a sequence or collection is empty
 
-    def assertNotEmpty(self, list, msg=None):
+        :param items: sequence or collection to be tested
+        :param msg: message to be passed to the AssertionError
+        :raises AssertionError: when items is not empty
+        """
         if msg is None:
-            msg = "list is empty."
-        self.assertGreater(len(list), 0, msg)
+            msg = "sequence or collection is not empty: %s" % items
+        self.assertFalse(items, msg)
+
+    def assertNotEmpty(self, items, msg=None):
+        """Asserts whether a sequence or collection is not empty
+
+        :param items: sequence or collection to be tested
+        :param msg: message to be passed to the AssertionError
+        :raises AssertionError: when items is empty
+        """
+        if msg is None:
+            msg = "sequence or collection is empty."
+        self.assertTrue(items, msg)

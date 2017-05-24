@@ -23,7 +23,6 @@ from tempest.common import custom_matchers
 from tempest import config
 from tempest.lib.common.utils import data_utils
 from tempest.lib import decorators
-from tempest import test
 
 CONF = config.CONF
 
@@ -54,7 +53,7 @@ class AccountTest(base.BaseObjectTest):
         cls.delete_containers()
         super(AccountTest, cls).resource_cleanup()
 
-    @test.attr(type='smoke')
+    @decorators.attr(type='smoke')
     @decorators.idempotent_id('3499406a-ae53-4f8c-b43a-133d4dc6fe3f')
     def test_list_containers(self):
         # list of all containers should not be empty
@@ -265,7 +264,7 @@ class AccountTest(base.BaseObjectTest):
         self.assertEqual(sorted(orig_container_list, reverse=True),
                          container_list)
 
-    @test.attr(type='smoke')
+    @decorators.attr(type='smoke')
     @decorators.idempotent_id('4894c312-6056-4587-8d6f-86ffbf861f80')
     def test_list_account_metadata(self):
         # list all account metadata
@@ -273,13 +272,15 @@ class AccountTest(base.BaseObjectTest):
         # set metadata to account
         metadata = {'test-account-meta1': 'Meta1',
                     'test-account-meta2': 'Meta2'}
-        resp, _ = self.account_client.create_account_metadata(metadata)
+        resp, _ = self.account_client.create_update_or_delete_account_metadata(
+            create_update_metadata=metadata)
 
         resp, _ = self.account_client.list_account_metadata()
         self.assertHeaders(resp, 'Account', 'HEAD')
         self.assertIn('x-account-meta-test-account-meta1', resp)
         self.assertIn('x-account-meta-test-account-meta2', resp)
-        self.account_client.delete_account_metadata(metadata)
+        self.account_client.create_update_or_delete_account_metadata(
+            delete_metadata=metadata)
 
     @decorators.idempotent_id('b904c2e3-24c2-4dba-ad7d-04e90a761be5')
     def test_list_no_account_metadata(self):
@@ -292,7 +293,8 @@ class AccountTest(base.BaseObjectTest):
     def test_update_account_metadata_with_create_metadata(self):
         # add metadata to account
         metadata = {'test-account-meta1': 'Meta1'}
-        resp, _ = self.account_client.create_account_metadata(metadata)
+        resp, _ = self.account_client.create_update_or_delete_account_metadata(
+            create_update_metadata=metadata)
         self.assertHeaders(resp, 'Account', 'POST')
 
         resp, body = self.account_client.list_account_metadata()
@@ -300,14 +302,17 @@ class AccountTest(base.BaseObjectTest):
         self.assertEqual(resp['x-account-meta-test-account-meta1'],
                          metadata['test-account-meta1'])
 
-        self.account_client.delete_account_metadata(metadata)
+        self.account_client.create_update_or_delete_account_metadata(
+            delete_metadata=metadata)
 
     @decorators.idempotent_id('9f60348d-c46f-4465-ae06-d51dbd470953')
     def test_update_account_metadata_with_delete_metadata(self):
         # delete metadata from account
         metadata = {'test-account-meta1': 'Meta1'}
-        self.account_client.create_account_metadata(metadata)
-        resp, _ = self.account_client.delete_account_metadata(metadata)
+        self.account_client.create_update_or_delete_account_metadata(
+            create_update_metadata=metadata)
+        resp, _ = self.account_client.create_update_or_delete_account_metadata(
+            delete_metadata=metadata)
         self.assertHeaders(resp, 'Account', 'POST')
 
         resp, _ = self.account_client.list_account_metadata()
@@ -318,7 +323,8 @@ class AccountTest(base.BaseObjectTest):
         # if the value of metadata is not set, the metadata is not
         # registered at a server
         metadata = {'test-account-meta1': ''}
-        resp, _ = self.account_client.create_account_metadata(metadata)
+        resp, _ = self.account_client.create_update_or_delete_account_metadata(
+            create_update_metadata=metadata)
         self.assertHeaders(resp, 'Account', 'POST')
 
         resp, _ = self.account_client.list_account_metadata()
@@ -329,9 +335,11 @@ class AccountTest(base.BaseObjectTest):
         # Although the value of metadata is not set, the feature of
         # deleting metadata is valid
         metadata_1 = {'test-account-meta1': 'Meta1'}
-        self.account_client.create_account_metadata(metadata_1)
+        self.account_client.create_update_or_delete_account_metadata(
+            create_update_metadata=metadata_1)
         metadata_2 = {'test-account-meta1': ''}
-        resp, _ = self.account_client.delete_account_metadata(metadata_2)
+        resp, _ = self.account_client.create_update_or_delete_account_metadata(
+            delete_metadata=metadata_2)
         self.assertHeaders(resp, 'Account', 'POST')
 
         resp, _ = self.account_client.list_account_metadata()
@@ -341,11 +349,13 @@ class AccountTest(base.BaseObjectTest):
     def test_update_account_metadata_with_create_and_delete_metadata(self):
         # Send a request adding and deleting metadata requests simultaneously
         metadata_1 = {'test-account-meta1': 'Meta1'}
-        self.account_client.create_account_metadata(metadata_1)
+        self.account_client.create_update_or_delete_account_metadata(
+            create_update_metadata=metadata_1)
         metadata_2 = {'test-account-meta2': 'Meta2'}
-        resp, body = self.account_client.create_and_delete_account_metadata(
-            metadata_2,
-            metadata_1)
+        resp, body = (
+            self.account_client.create_update_or_delete_account_metadata(
+                create_update_metadata=metadata_2,
+                delete_metadata=metadata_1))
         self.assertHeaders(resp, 'Account', 'POST')
 
         resp, _ = self.account_client.list_account_metadata()
@@ -354,4 +364,5 @@ class AccountTest(base.BaseObjectTest):
         self.assertEqual(resp['x-account-meta-test-account-meta2'],
                          metadata_2['test-account-meta2'])
 
-        self.account_client.delete_account_metadata(metadata_2)
+        self.account_client.create_update_or_delete_account_metadata(
+            delete_metadata=metadata_2)

@@ -13,9 +13,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from tempest.api.volume import api_microversion_fixture
 from tempest.common import compute
 from tempest.common import waiters
 from tempest import config
+from tempest.lib.common import api_version_utils
 from tempest.lib.common.utils import data_utils
 from tempest.lib.common.utils import test_utils
 from tempest.lib import exceptions
@@ -24,7 +26,8 @@ import tempest.test
 CONF = config.CONF
 
 
-class BaseVolumeTest(tempest.test.BaseTestCase):
+class BaseVolumeTest(api_version_utils.BaseMicroversionTest,
+                     tempest.test.BaseTestCase):
     """Base test case class for all Cinder API tests."""
 
     _api_version = 2
@@ -37,11 +40,7 @@ class BaseVolumeTest(tempest.test.BaseTestCase):
         if not CONF.service_available.cinder:
             skip_msg = ("%s skipped as Cinder is not available" % cls.__name__)
             raise cls.skipException(skip_msg)
-        if cls._api_version == 1:
-            if not CONF.volume_feature_enabled.api_v1:
-                msg = "Volume API v1 is disabled"
-                raise cls.skipException(msg)
-        elif cls._api_version == 2:
+        if cls._api_version == 2:
             if not CONF.volume_feature_enabled.api_v2:
                 msg = "Volume API v2 is disabled"
                 raise cls.skipException(msg)
@@ -53,6 +52,10 @@ class BaseVolumeTest(tempest.test.BaseTestCase):
             msg = ("Invalid Cinder API version (%s)" % cls._api_version)
             raise exceptions.InvalidConfiguration(msg)
 
+        api_version_utils.check_skip_with_microversion(
+            cls.min_microversion, cls.max_microversion,
+            CONF.volume.min_microversion, CONF.volume.max_microversion)
+
     @classmethod
     def setup_credentials(cls):
         cls.set_network_resources()
@@ -61,31 +64,37 @@ class BaseVolumeTest(tempest.test.BaseTestCase):
     @classmethod
     def setup_clients(cls):
         super(BaseVolumeTest, cls).setup_clients()
-        cls.servers_client = cls.os.servers_client
-        cls.compute_networks_client = cls.os.compute_networks_client
-        cls.compute_images_client = cls.os.compute_images_client
+        cls.servers_client = cls.os_primary.servers_client
 
-        if cls._api_version == 1:
-            cls.snapshots_client = cls.os.snapshots_client
-            cls.volumes_client = cls.os.volumes_client
-            cls.backups_client = cls.os.backups_client
-            cls.volume_services_client = cls.os.volume_services_client
-            cls.volumes_extension_client = cls.os.volumes_extension_client
-            cls.availability_zone_client = (
-                cls.os.volume_availability_zone_client)
-            cls.volume_limits_client = cls.os.volume_limits_client
-        else:
-            cls.snapshots_client = cls.os.snapshots_v2_client
-            cls.volumes_client = cls.os.volumes_v2_client
-            cls.backups_client = cls.os.backups_v2_client
-            cls.volumes_extension_client = cls.os.volumes_v2_extension_client
-            cls.availability_zone_client = (
-                cls.os.volume_v2_availability_zone_client)
-            cls.volume_limits_client = cls.os.volume_v2_limits_client
+        if CONF.service_available.glance:
+            cls.images_client = cls.os_primary.image_client_v2
+
+        cls.snapshots_client = cls.os_primary.snapshots_v2_client
+        cls.volumes_client = cls.os_primary.volumes_v2_client
+        cls.backups_client = cls.os_primary.backups_v2_client
+        cls.volumes_extension_client =\
+            cls.os_primary.volumes_v2_extension_client
+        cls.availability_zone_client = (
+            cls.os_primary.volume_v2_availability_zone_client)
+        cls.volume_limits_client = cls.os_primary.volume_v2_limits_client
+        cls.messages_client = cls.os_primary.volume_v3_messages_client
+        cls.versions_client = cls.os_primary.volume_v3_versions_client
+
+        if cls._api_version == 3:
+            cls.volumes_client = cls.os_primary.volumes_v3_client
+
+    def setUp(self):
+        super(BaseVolumeTest, self).setUp()
+        self.useFixture(api_microversion_fixture.APIMicroversionFixture(
+            self.request_microversion))
 
     @classmethod
     def resource_setup(cls):
         super(BaseVolumeTest, cls).resource_setup()
+        cls.request_microversion = (
+            api_version_utils.select_request_microversion(
+                cls.min_microversion,
+                CONF.volume.min_microversion))
 
         cls.snapshots = []
         cls.volumes = []
@@ -93,15 +102,6 @@ class BaseVolumeTest(tempest.test.BaseTestCase):
         cls.flavor_ref = CONF.compute.flavor_ref
         cls.build_interval = CONF.volume.build_interval
         cls.build_timeout = CONF.volume.build_timeout
-
-        if cls._api_version == 1:
-            # Special fields and resp code for cinder v1
-            cls.special_fields = {'name_field': 'display_name',
-                                  'descrip_field': 'display_description'}
-        else:
-            # Special fields and resp code for cinder v2
-            cls.special_fields = {'name_field': 'name',
-                                  'descrip_field': 'description'}
 
     @classmethod
     def resource_cleanup(cls):
@@ -119,15 +119,13 @@ class BaseVolumeTest(tempest.test.BaseTestCase):
             kwargs['size'] = CONF.volume.volume_size
 
         if 'imageRef' in kwargs:
-            image = cls.compute_images_client.show_image(
-                kwargs['imageRef'])['image']
-            min_disk = image.get('minDisk')
+            image = cls.images_client.show_image(kwargs['imageRef'])
+            min_disk = image['min_disk']
             kwargs['size'] = max(kwargs['size'], min_disk)
 
-        name_field = cls.special_fields['name_field']
-        if name_field not in kwargs:
+        if 'name' not in kwargs:
             name = data_utils.rand_name(cls.__name__ + '-Volume')
-            kwargs[name_field] = name
+            kwargs['name'] = name
 
         volume = cls.volumes_client.create_volume(**kwargs)['volume']
         cls.volumes.append(volume)
@@ -138,10 +136,9 @@ class BaseVolumeTest(tempest.test.BaseTestCase):
     @classmethod
     def create_snapshot(cls, volume_id=1, **kwargs):
         """Wrapper utility that returns a test snapshot."""
-        name_field = cls.special_fields['name_field']
-        if name_field not in kwargs:
+        if 'name' not in kwargs:
             name = data_utils.rand_name(cls.__name__ + '-Snapshot')
-            kwargs[name_field] = name
+            kwargs['name'] = name
 
         snapshot = cls.snapshots_client.create_snapshot(
             volume_id=volume_id, **kwargs)['snapshot']
@@ -154,6 +151,9 @@ class BaseVolumeTest(tempest.test.BaseTestCase):
         """Wrapper utility that returns a test backup."""
         if backup_client is None:
             backup_client = self.backups_client
+        if 'name' not in kwargs:
+            name = data_utils.rand_name(self.__class__.__name__ + '-Backup')
+            kwargs['name'] = name
 
         backup = backup_client.create_backup(
             volume_id=volume_id, **kwargs)['backup']
@@ -224,7 +224,7 @@ class BaseVolumeTest(tempest.test.BaseTestCase):
 
         tenant_network = self.get_tenant_network()
         body, _ = compute.create_test_server(
-            self.os,
+            self.os_primary,
             tenant_network=tenant_network,
             name=name,
             **kwargs)
@@ -246,38 +246,31 @@ class BaseVolumeAdminTest(BaseVolumeTest):
     def setup_clients(cls):
         super(BaseVolumeAdminTest, cls).setup_clients()
 
-        if cls._api_version == 1:
-            cls.admin_volume_qos_client = cls.os_adm.volume_qos_client
-            cls.admin_volume_services_client = \
-                cls.os_adm.volume_services_client
-            cls.admin_volume_types_client = cls.os_adm.volume_types_client
-            cls.admin_volume_client = cls.os_adm.volumes_client
-            cls.admin_hosts_client = cls.os_adm.volume_hosts_client
-            cls.admin_snapshots_client = cls.os_adm.snapshots_client
-            cls.admin_backups_client = cls.os_adm.backups_client
-            cls.admin_encryption_types_client = \
-                cls.os_adm.encryption_types_client
-            cls.admin_quotas_client = cls.os_adm.volume_quotas_client
-            cls.admin_volume_limits_client = cls.os_adm.volume_limits_client
-        elif cls._api_version == 2:
-            cls.admin_volume_qos_client = cls.os_adm.volume_qos_v2_client
-            cls.admin_volume_services_client = \
-                cls.os_adm.volume_services_v2_client
-            cls.admin_volume_types_client = cls.os_adm.volume_types_v2_client
-            cls.admin_volume_client = cls.os_adm.volumes_v2_client
-            cls.admin_hosts_client = cls.os_adm.volume_hosts_v2_client
-            cls.admin_snapshot_manage_client = \
-                cls.os_adm.snapshot_manage_v2_client
-            cls.admin_snapshots_client = cls.os_adm.snapshots_v2_client
-            cls.admin_backups_client = cls.os_adm.backups_v2_client
-            cls.admin_encryption_types_client = \
-                cls.os_adm.encryption_types_v2_client
-            cls.admin_quotas_client = cls.os_adm.volume_quotas_v2_client
-            cls.admin_volume_limits_client = cls.os_adm.volume_v2_limits_client
-            cls.admin_capabilities_client = \
-                cls.os_adm.volume_capabilities_v2_client
-            cls.admin_scheduler_stats_client = \
-                cls.os_adm.volume_scheduler_stats_v2_client
+        cls.admin_volume_qos_client = cls.os_admin.volume_qos_v2_client
+        cls.admin_volume_services_client = \
+            cls.os_admin.volume_services_v2_client
+        cls.admin_volume_types_client = cls.os_admin.volume_types_v2_client
+        cls.admin_volume_manage_client = cls.os_admin.volume_manage_v2_client
+        cls.admin_volume_client = cls.os_admin.volumes_v2_client
+        cls.admin_hosts_client = cls.os_admin.volume_hosts_v2_client
+        cls.admin_snapshot_manage_client = \
+            cls.os_admin.snapshot_manage_v2_client
+        cls.admin_snapshots_client = cls.os_admin.snapshots_v2_client
+        cls.admin_backups_client = cls.os_admin.backups_v2_client
+        cls.admin_encryption_types_client = \
+            cls.os_admin.encryption_types_v2_client
+        cls.admin_quota_classes_client = \
+            cls.os_admin.volume_quota_classes_v2_client
+        cls.admin_quotas_client = cls.os_admin.volume_quotas_v2_client
+        cls.admin_volume_limits_client = cls.os_admin.volume_v2_limits_client
+        cls.admin_capabilities_client = \
+            cls.os_admin.volume_capabilities_v2_client
+        cls.admin_scheduler_stats_client = \
+            cls.os_admin.volume_scheduler_stats_v2_client
+        cls.admin_messages_client = cls.os_admin.volume_v3_messages_client
+
+        if cls._api_version == 3:
+            cls.admin_volume_client = cls.os_admin.volumes_v3_client
 
     @classmethod
     def resource_setup(cls):

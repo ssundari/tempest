@@ -122,6 +122,7 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
             self.router = None
             self.security_groups = {}
             self.servers = list()
+            self.access_point = None
 
         def set_network(self, network, subnet, router):
             self.network = network
@@ -167,7 +168,7 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
 
         cls.floating_ips = {}
         cls.tenants = {}
-        cls.primary_tenant = cls.TenantProperties(cls.os)
+        cls.primary_tenant = cls.TenantProperties(cls.os_primary)
         cls.alt_tenant = cls.TenantProperties(cls.os_alt)
         for tenant in [cls.primary_tenant, cls.alt_tenant]:
             cls.tenants[tenant.creds.tenant_id] = tenant
@@ -458,6 +459,14 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
         subnet_id = tenant.subnet['id']
         self.assertIn((subnet_id, server_ip, mac_addr), port_detail_list)
 
+    def _log_console_output_for_all_tenants(self):
+        for tenant in self.tenants.values():
+            client = tenant.manager.servers_client
+            self._log_console_output(servers=tenant.servers, client=client)
+            if tenant.access_point is not None:
+                self._log_console_output(
+                    servers=[tenant.access_point], client=client)
+
     @decorators.idempotent_id('e79f879e-debb-440c-a7e4-efeda05b6848')
     @test.services('compute', 'network')
     def test_cross_tenant_traffic(self):
@@ -475,8 +484,7 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
             self._test_cross_tenant_block(source_tenant, dest_tenant)
             self._test_cross_tenant_allow(source_tenant, dest_tenant)
         except Exception:
-            for tenant in self.tenants.values():
-                self._log_console_output(servers=tenant.servers)
+            self._log_console_output_for_all_tenants()
             raise
 
     @decorators.idempotent_id('63163892-bbf6-4249-aa12-d5ea1f8f421b')
@@ -489,12 +497,11 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
             self._test_in_tenant_block(self.primary_tenant)
             self._test_in_tenant_allow(self.primary_tenant)
         except Exception:
-            for tenant in self.tenants.values():
-                self._log_console_output(servers=tenant.servers)
+            self._log_console_output_for_all_tenants()
             raise
 
     @decorators.idempotent_id('f4d556d7-1526-42ad-bafb-6bebf48568f6')
-    @test.attr(type='slow')
+    @decorators.attr(type='slow')
     @test.services('compute', 'network')
     def test_port_update_new_security_group(self):
         """Verifies the traffic after updating the vm port
@@ -544,12 +551,11 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
                 source=access_point_ssh,
                 dest=self._get_server_ip(server))
         except Exception:
-            for tenant in self.tenants.values():
-                self._log_console_output(servers=tenant.servers)
+            self._log_console_output_for_all_tenants()
             raise
 
     @decorators.idempotent_id('d2f77418-fcc4-439d-b935-72eca704e293')
-    @test.attr(type='slow')
+    @decorators.attr(type='slow')
     @test.services('compute', 'network')
     def test_multiple_security_groups(self):
         """Verify multiple security groups and checks that rules
@@ -581,7 +587,7 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
                                    private_key=private_key,
                                    should_connect=True)
 
-    @test.attr(type='slow')
+    @decorators.attr(type='slow')
     @test.requires_ext(service='network', extension='port-security')
     @decorators.idempotent_id('7c811dcc-263b-49a3-92d2-1b4d8405f50c')
     @test.services('compute', 'network')
@@ -618,16 +624,12 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
                 source=access_point_ssh,
                 dest=self._get_server_ip(server))
         except Exception:
-            for tenant in self.tenants.values():
-                self._log_console_output(servers=tenant.servers)
+            self._log_console_output_for_all_tenants()
             raise
 
-    @test.attr(type='slow')
+    @decorators.attr(type='slow')
     @test.requires_ext(service='network', extension='port-security')
     @decorators.idempotent_id('13ccf253-e5ad-424b-9c4a-97b88a026699')
-    @testtools.skipUnless(
-        CONF.compute_feature_enabled.allow_port_security_disabled,
-        'Port security must be enabled.')
     # TODO(mriedem): We shouldn't actually need to check this since neutron
     # disables the port_security extension by default, but the problem is nova
     # assumes port_security_enabled=True if it's not set on the network

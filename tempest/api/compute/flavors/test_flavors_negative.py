@@ -34,15 +34,15 @@ class FlavorsV2NegativeTest(base.BaseV2ComputeTest):
     def setup_clients(cls):
         super(FlavorsV2NegativeTest, cls).setup_clients()
         if CONF.image_feature_enabled.api_v1:
-            cls.images_client = cls.os.image_client
+            cls.images_client = cls.os_primary.image_client
         elif CONF.image_feature_enabled.api_v2:
-            cls.images_client = cls.os.image_client_v2
+            cls.images_client = cls.os_primary.image_client_v2
         else:
             raise lib_exc.InvalidConfiguration(
                 'Either api_v1 or api_v2 must be True in '
                 '[image-feature-enabled].')
 
-    @test.attr(type=['negative'])
+    @decorators.attr(type=['negative'])
     @test.services('image')
     @decorators.idempotent_id('90f0d93a-91c1-450c-91e6-07d18172cefe')
     def test_boot_with_low_ram(self):
@@ -82,9 +82,9 @@ class FlavorsV2NegativeTest(base.BaseV2ComputeTest):
         self.assertEqual(min_img_ram, image['min_ram'])
 
         # Try to create server with flavor of insufficient ram size
-        self.assertRaisesRegexp(lib_exc.BadRequest,
-                                "Flavor's memory is too small for "
-                                "requested image",
-                                self.create_test_server,
-                                image_id=image['id'],
-                                flavor=flavor['id'])
+        self.assertRaisesRegex(lib_exc.BadRequest,
+                               "Flavor's memory is too small for "
+                               "requested image",
+                               self.create_test_server,
+                               image_id=image['id'],
+                               flavor=flavor['id'])

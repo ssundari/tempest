@@ -16,46 +16,35 @@ from tempest.api.volume import base
 from tempest import config
 from tempest.lib.common.utils import data_utils
 from tempest.lib import decorators
+from tempest.lib import exceptions as lib_exc
 from tempest import test
 
 CONF = config.CONF
 
 
-class VolumesV2SnapshotTestJSON(base.BaseVolumeTest):
+class VolumesSnapshotTestJSON(base.BaseVolumeTest):
 
     @classmethod
     def skip_checks(cls):
-        super(VolumesV2SnapshotTestJSON, cls).skip_checks()
+        super(VolumesSnapshotTestJSON, cls).skip_checks()
         if not CONF.volume_feature_enabled.snapshot:
             raise cls.skipException("Cinder volume snapshots are disabled")
 
     @classmethod
     def resource_setup(cls):
-        super(VolumesV2SnapshotTestJSON, cls).resource_setup()
+        super(VolumesSnapshotTestJSON, cls).resource_setup()
         cls.volume_origin = cls.create_volume()
-        cls.name_field = cls.special_fields['name_field']
-        cls.descrip_field = cls.special_fields['descrip_field']
-
-    @decorators.idempotent_id('b467b54c-07a4-446d-a1cf-651dedcc3ff1')
-    @test.services('compute')
-    def test_snapshot_create_with_volume_in_use(self):
-        # Create a snapshot when volume status is in-use
-        # Create a test instance
-        server = self.create_server(wait_until='ACTIVE')
-        self.attach_volume(server['id'], self.volume_origin['id'])
-
-        # Snapshot a volume even if it's attached to an instance
-        snapshot = self.create_snapshot(self.volume_origin['id'],
-                                        force=True)
-        # Delete the snapshot
-        self.delete_snapshot(snapshot['id'])
 
     @decorators.idempotent_id('8567b54c-4455-446d-a1cf-651ddeaa3ff2')
     @test.services('compute')
-    def test_snapshot_delete_with_volume_in_use(self):
+    def test_snapshot_create_delete_with_volume_in_use(self):
         # Create a test instance
         server = self.create_server(wait_until='ACTIVE')
         self.attach_volume(server['id'], self.volume_origin['id'])
+
+        # Snapshot a volume which attached to an instance with force=False
+        self.assertRaises(lib_exc.BadRequest, self.create_snapshot,
+                          self.volume_origin['id'], force=False)
 
         # Snapshot a volume attached to an instance
         snapshot1 = self.create_snapshot(self.volume_origin['id'], force=True)
@@ -104,40 +93,42 @@ class VolumesV2SnapshotTestJSON(base.BaseVolumeTest):
         self.assertEqual(self.volume_origin['id'],
                          snap_get['volume_id'],
                          "Referred volume origin mismatch")
+        self.assertEqual(self.volume_origin['size'], snap_get['size'])
 
         # Verify snapshot metadata
         self.assertThat(snap_get['metadata'].items(),
                         matchers.ContainsAll(metadata.items()))
 
         # Compare also with the output from the list action
-        tracking_data = (snapshot['id'], snapshot[self.name_field])
+        tracking_data = (snapshot['id'], snapshot['name'])
         snaps_list = self.snapshots_client.list_snapshots()['snapshots']
-        snaps_data = [(f['id'], f[self.name_field]) for f in snaps_list]
+        snaps_data = [(f['id'], f['name']) for f in snaps_list]
         self.assertIn(tracking_data, snaps_data)
 
         # Updates snapshot with new values
         new_s_name = data_utils.rand_name(
             self.__class__.__name__ + '-new-snap')
         new_desc = 'This is the new description of snapshot.'
-        params = {self.name_field: new_s_name,
-                  self.descrip_field: new_desc}
+        params = {'name': new_s_name,
+                  'description': new_desc}
         update_snapshot = self.snapshots_client.update_snapshot(
             snapshot['id'], **params)['snapshot']
         # Assert response body for update_snapshot method
-        self.assertEqual(new_s_name, update_snapshot[self.name_field])
-        self.assertEqual(new_desc, update_snapshot[self.descrip_field])
+        self.assertEqual(new_s_name, update_snapshot['name'])
+        self.assertEqual(new_desc, update_snapshot['description'])
         # Assert response body for show_snapshot method
         updated_snapshot = self.snapshots_client.show_snapshot(
             snapshot['id'])['snapshot']
-        self.assertEqual(new_s_name, updated_snapshot[self.name_field])
-        self.assertEqual(new_desc, updated_snapshot[self.descrip_field])
+        self.assertEqual(new_s_name, updated_snapshot['name'])
+        self.assertEqual(new_desc, updated_snapshot['description'])
 
         # Delete the snapshot
         self.delete_snapshot(snapshot['id'])
 
     @decorators.idempotent_id('677863d1-3142-456d-b6ac-9924f667a7f4')
     def test_volume_from_snapshot(self):
-        # Creates a volume a snapshot passing a size different from the source
+        # Creates a volume from a snapshot passing a size
+        # different from the source
         src_size = CONF.volume.volume_size
 
         src_vol = self.create_volume(size=src_size)
@@ -158,7 +149,3 @@ class VolumesV2SnapshotTestJSON(base.BaseVolumeTest):
         # Should allow
         self.assertEqual(volume['snapshot_id'], src_snap['id'])
         self.assertEqual(volume['size'], src_size + 1)
-
-
-class VolumesV1SnapshotTestJSON(VolumesV2SnapshotTestJSON):
-    _api_version = 1

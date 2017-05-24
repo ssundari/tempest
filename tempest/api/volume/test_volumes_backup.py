@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import testtools
 from testtools import matchers
 
 from tempest.api.volume import base
@@ -25,11 +26,11 @@ from tempest import test
 CONF = config.CONF
 
 
-class VolumesBackupsV2Test(base.BaseVolumeTest):
+class VolumesBackupsTest(base.BaseVolumeTest):
 
     @classmethod
     def skip_checks(cls):
-        super(VolumesBackupsV2Test, cls).skip_checks()
+        super(VolumesBackupsTest, cls).skip_checks()
         if not CONF.volume_feature_enabled.backup:
             raise cls.skipException("Cinder backup feature disabled")
 
@@ -49,6 +50,8 @@ class VolumesBackupsV2Test(base.BaseVolumeTest):
                                                 'available')
         return restored_volume
 
+    @testtools.skipIf(CONF.volume.storage_protocol == 'ceph',
+                      'ceph does not support arbitrary container names')
     @decorators.idempotent_id('a66eb488-8ee1-47d4-8e9f-575a095728c6')
     def test_volume_backup_create_get_detailed_list_restore_delete(self):
         # Create a volume with metadata
@@ -65,7 +68,8 @@ class VolumesBackupsV2Test(base.BaseVolumeTest):
         description = data_utils.rand_name("volume-backup-description")
         backup = self.create_backup(volume_id=volume['id'],
                                     name=backup_name,
-                                    description=description)
+                                    description=description,
+                                    container='container')
         self.assertEqual(backup_name, backup['name'])
         waiters.wait_for_volume_resource_status(self.volumes_client,
                                                 volume['id'], 'available')
@@ -74,6 +78,7 @@ class VolumesBackupsV2Test(base.BaseVolumeTest):
         backup = self.backups_client.show_backup(backup['id'])['backup']
         self.assertEqual(backup_name, backup['name'])
         self.assertEqual(description, backup['description'])
+        self.assertEqual('container', backup['container'])
 
         # Get all backups with detail
         backups = self.backups_client.list_backups(
@@ -113,6 +118,8 @@ class VolumesBackupsV2Test(base.BaseVolumeTest):
                                     name=backup_name, force=True)
         self.assertEqual(backup_name, backup['name'])
 
+    @testtools.skipUnless(CONF.service_available.glance,
+                          "Glance is not available")
     @decorators.idempotent_id('2a8ba340-dff2-4511-9db7-646f07156b15')
     def test_bootable_volume_backup_and_restore(self):
         # Create volume from image
@@ -134,7 +141,3 @@ class VolumesBackupsV2Test(base.BaseVolumeTest):
             restored_volume_id)['volume']
 
         self.assertEqual('true', restored_volume_info['bootable'])
-
-
-class VolumesBackupsV1Test(VolumesBackupsV2Test):
-    _api_version = 1

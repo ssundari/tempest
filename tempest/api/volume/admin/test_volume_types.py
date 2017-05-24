@@ -22,7 +22,7 @@ from tempest.lib import decorators
 CONF = config.CONF
 
 
-class VolumeTypesV2Test(base.BaseVolumeAdminTest):
+class VolumeTypesTest(base.BaseVolumeAdminTest):
 
     @decorators.idempotent_id('9d9b28e3-1b2e-4483-a2cc-24aa0ea1de54')
     def test_volume_type_list(self):
@@ -36,7 +36,6 @@ class VolumeTypesV2Test(base.BaseVolumeAdminTest):
         # Create/update/get/delete volume with volume_type and extra spec.
         volume_types = list()
         vol_name = data_utils.rand_name(self.__class__.__name__ + '-volume')
-        name_field = self.special_fields['name_field']
         proto = CONF.volume.storage_protocol
         vendor = CONF.volume.vendor_name
         extra_specs = {"storage_protocol": proto,
@@ -46,14 +45,14 @@ class VolumeTypesV2Test(base.BaseVolumeAdminTest):
             vol_type = self.create_volume_type(
                 extra_specs=extra_specs)
             volume_types.append(vol_type)
-        params = {name_field: vol_name,
+        params = {'name': vol_name,
                   'volume_type': volume_types[0]['id'],
                   'size': CONF.volume.volume_size}
 
         # Create volume
         volume = self.create_volume(**params)
         self.assertEqual(volume_types[0]['name'], volume["volume_type"])
-        self.assertEqual(volume[name_field], vol_name,
+        self.assertEqual(volume['name'], vol_name,
                          "The created volume name is not equal "
                          "to the requested name")
         self.assertIsNotNone(volume['id'],
@@ -74,7 +73,7 @@ class VolumeTypesV2Test(base.BaseVolumeAdminTest):
                          fetched_volume['volume_type'],
                          'The fetched Volume type is different '
                          'from updated volume type')
-        self.assertEqual(vol_name, fetched_volume[name_field],
+        self.assertEqual(vol_name, fetched_volume['name'],
                          'The fetched Volume is different '
                          'from the created Volume')
         self.assertEqual(volume['id'], fetched_volume['id'],
@@ -123,43 +122,55 @@ class VolumeTypesV2Test(base.BaseVolumeAdminTest):
             fetched_volume_type['os-volume-type-access:is_public'])
 
     @decorators.idempotent_id('7830abd0-ff99-4793-a265-405684a54d46')
-    def test_volume_type_encryption_create_get_delete(self):
-        # Create/get/delete encryption type.
-        provider = "LuksEncryptor"
-        control_location = "front-end"
-        body = self.create_volume_type()
+    def test_volume_type_encryption_create_get_update_delete(self):
+        # Create/get/update/delete encryption type.
+        create_kwargs = {'provider': 'LuksEncryptor',
+                         'control_location': 'front-end'}
+        volume_type_id = self.create_volume_type()['id']
+
         # Create encryption type
         encryption_type = \
             self.admin_encryption_types_client.create_encryption_type(
-                body['id'], provider=provider,
-                control_location=control_location)['encryption']
+                volume_type_id, **create_kwargs)['encryption']
         self.assertIn('volume_type_id', encryption_type)
-        self.assertEqual(provider, encryption_type['provider'],
-                         "The created encryption_type provider is not equal "
-                         "to the requested provider")
-        self.assertEqual(control_location, encryption_type['control_location'],
-                         "The created encryption_type control_location is not "
-                         "equal to the requested control_location")
+        for key in create_kwargs:
+            self.assertEqual(create_kwargs[key], encryption_type[key],
+                             'The created encryption_type %s is different '
+                             'from the requested encryption_type' % key)
 
         # Get encryption type
+        encrypt_type_id = encryption_type['volume_type_id']
         fetched_encryption_type = (
             self.admin_encryption_types_client.show_encryption_type(
-                encryption_type['volume_type_id']))
-        self.assertEqual(provider,
-                         fetched_encryption_type['provider'],
-                         'The fetched encryption_type provider is different '
-                         'from the created encryption_type')
-        self.assertEqual(control_location,
-                         fetched_encryption_type['control_location'],
-                         'The fetched encryption_type control_location is '
-                         'different from the created encryption_type')
+                encrypt_type_id))
+        for key in create_kwargs:
+            self.assertEqual(create_kwargs[key], fetched_encryption_type[key],
+                             'The fetched encryption_type %s is different '
+                             'from the created encryption_type' % key)
+
+        # Update encryption type
+        update_kwargs = {'key_size': 128,
+                         'provider': 'SomeProvider',
+                         'cipher': 'aes-xts-plain64',
+                         'control_location': 'back-end'}
+        self.admin_encryption_types_client.update_encryption_type(
+            encrypt_type_id, **update_kwargs)
+        updated_encryption_type = (
+            self.admin_encryption_types_client.show_encryption_type(
+                encrypt_type_id))
+        for key in update_kwargs:
+            self.assertEqual(update_kwargs[key], updated_encryption_type[key],
+                             'The fetched encryption_type %s is different '
+                             'from the updated encryption_type' % key)
 
         # Delete encryption type
-        type_id = encryption_type['volume_type_id']
-        self.admin_encryption_types_client.delete_encryption_type(type_id)
-        self.admin_encryption_types_client.wait_for_resource_deletion(type_id)
+        self.admin_encryption_types_client.delete_encryption_type(
+            encrypt_type_id)
+        self.admin_encryption_types_client.wait_for_resource_deletion(
+            encrypt_type_id)
         deleted_encryption_type = (
-            self.admin_encryption_types_client.show_encryption_type(type_id))
+            self.admin_encryption_types_client.show_encryption_type(
+                encrypt_type_id))
         self.assertEmpty(deleted_encryption_type)
 
     @decorators.idempotent_id('cf9f07c6-db9e-4462-a243-5933ad65e9c8')
@@ -183,7 +194,3 @@ class VolumeTypesV2Test(base.BaseVolumeAdminTest):
         self.assertEqual(name, updated_vol_type['name'])
         self.assertEqual(description, updated_vol_type['description'])
         self.assertEqual(is_public, updated_vol_type['is_public'])
-
-
-class VolumeTypesV1Test(VolumeTypesV2Test):
-    _api_version = 1

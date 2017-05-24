@@ -39,14 +39,15 @@ class ObjectTempUrlNegativeTest(base.BaseObjectTest):
         # update account metadata
         cls.key = 'Meta'
         cls.metadata = {'Temp-URL-Key': cls.key}
-        cls.account_client.create_account_metadata(metadata=cls.metadata)
+        cls.account_client.create_update_or_delete_account_metadata(
+            create_update_metadata=cls.metadata)
         cls.account_client_metadata, _ = \
             cls.account_client.list_account_metadata()
 
     @classmethod
     def resource_cleanup(cls):
-        resp, _ = cls.account_client.delete_account_metadata(
-            metadata=cls.metadata)
+        resp, _ = cls.account_client.create_update_or_delete_account_metadata(
+            delete_metadata=cls.metadata)
 
         cls.delete_containers()
 
@@ -91,7 +92,7 @@ class ObjectTempUrlNegativeTest(base.BaseObjectTest):
 
         return url
 
-    @test.attr(type=['negative'])
+    @decorators.attr(type=['negative'])
     @decorators.idempotent_id('5a583aca-c804-41ba-9d9a-e7be132bdf0b')
     @test.requires_ext(extension='tempurl', service='object')
     def test_get_object_after_expiration_time(self):

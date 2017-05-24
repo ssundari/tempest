@@ -2,18 +2,16 @@
 Tempest Testing Project
 =======================
 
---------
 Overview
---------
+========
 
 .. toctree::
    :maxdepth: 2
 
    overview
 
-------------
 Field Guides
-------------
+============
 Tempest contains tests of many different types, the field guides
 attempt to explain these in a way that makes it easy to understand
 where your test contributions should go.
@@ -26,11 +24,9 @@ where your test contributions should go.
    field_guide/scenario
    field_guide/unit_tests
 
-=========
 For users
 =========
 
----------------------------
 Tempest Configuration Guide
 ---------------------------
 
@@ -40,7 +36,6 @@ Tempest Configuration Guide
    configuration
    sampleconf
 
----------------------
 Command Documentation
 ---------------------
 
@@ -53,11 +48,9 @@ Command Documentation
    workspace
    run
 
-==============
 For developers
 ==============
 
------------
 Development
 -----------
 
@@ -67,9 +60,9 @@ Development
    HACKING
    REVIEWING
    microversion_testing
-   test-removal
+   test_removal
+   write_tests
 
--------
 Plugins
 -------
 
@@ -79,7 +72,6 @@ Plugins
    plugin
    plugin-registry
 
--------
 Library
 -------
 
@@ -88,7 +80,6 @@ Library
 
    library
 
-==================
 Indices and tables
 ==================
 

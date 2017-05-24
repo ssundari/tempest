@@ -31,19 +31,21 @@ class ExtensionsTestJSON(base.BaseV2ComputeTest):
     @decorators.idempotent_id('3bb27738-b759-4e0d-a5fa-37d7a6df07d1')
     def test_list_extensions(self):
         # List of all extensions
-        if len(CONF.compute_feature_enabled.api_extensions) == 0:
+        if not CONF.compute_feature_enabled.api_extensions:
             raise self.skipException('There are not any extensions configured')
         extensions = self.extensions_client.list_extensions()['extensions']
         ext = CONF.compute_feature_enabled.api_extensions[0]
-        if ext == 'all':
-            self.assertIn('Hosts', map(lambda x: x['name'], extensions))
-        elif ext:
-            self.assertIn(ext, map(lambda x: x['alias'], extensions))
-        else:
-            raise self.skipException('There are not any extensions configured')
+
         # Log extensions list
         extension_list = map(lambda x: x['alias'], extensions)
         LOG.debug("Nova extensions: %s", ','.join(extension_list))
+
+        if ext == 'all':
+            self.assertIn('Hosts', map(lambda x: x['name'], extensions))
+        elif ext:
+            self.assertIn(ext, extension_list)
+        else:
+            raise self.skipException('There are not any extensions configured')
 
     @decorators.idempotent_id('05762f39-bdfa-4cdb-9b46-b78f8e78e2fd')
     @test.requires_ext(extension='os-consoles', service='compute')

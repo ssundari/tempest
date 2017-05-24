@@ -27,12 +27,7 @@ AGENT_MODES = (
 
 
 class L3AgentSchedulerTestJSON(base.BaseAdminNetworkTest):
-    _agent_mode = 'legacy'
-    is_dvr_router = False
-
-    """
-    Tests the following operations in the Neutron API using the REST client for
-    Neutron:
+    """Tests the following operations in the Neutron API:
 
         List routers that the given L3 agent is hosting.
         List L3 agents hosting the given router.
@@ -53,56 +48,16 @@ class L3AgentSchedulerTestJSON(base.BaseAdminNetworkTest):
     @classmethod
     def resource_setup(cls):
         super(L3AgentSchedulerTestJSON, cls).resource_setup()
-        body = cls.admin_agents_client.list_agents()
-        agents = body['agents']
+        agents = cls.admin_agents_client.list_agents(
+            agent_type=AGENT_TYPE)['agents']
         for agent in agents:
-            # TODO(armax): falling back on default _agent_mode can be
-            # dropped as soon as Icehouse is dropped.
-            agent_mode = (
-                agent['configurations'].get('agent_mode', cls._agent_mode))
-            if agent['agent_type'] == AGENT_TYPE and agent_mode in AGENT_MODES:
+            if agent['configurations']['agent_mode'] in AGENT_MODES:
                 cls.agent = agent
                 break
         else:
             msg = "L3 Agent Scheduler enabled in conf, but L3 Agent not found"
             raise exceptions.InvalidConfiguration(msg)
         cls.router = cls.create_router()
-
-        if CONF.network.dvr_extra_resources:
-            # NOTE(armax): If DVR is an available extension, and the created
-            # router is indeed a distributed one, more resources need to be
-            # provisioned in order to bind the router to the L3 agent in the
-            # Liberty release or older, and are not required since the Mitaka
-            # release.
-            if test.is_extension_enabled('dvr', 'network'):
-                cls.is_dvr_router = cls.admin_routers_client.show_router(
-                    cls.router['id'])['router'].get('distributed', False)
-                if cls.is_dvr_router:
-                    cls.network = cls.create_network()
-                    cls.create_subnet(cls.network)
-                    cls.port = cls.create_port(cls.network)
-                    cls.routers_client.add_router_interface(
-                        cls.router['id'], port_id=cls.port['id'])
-                    # NOTE: Sometimes we have seen this test fail with dvr in,
-                    # multinode tests, since the dhcp port is not created
-                    # before the test gets executed and so the router is not
-                    # scheduled on the given agent. By adding the external
-                    # gateway info to the router, the router should be properly
-                    # scheduled in the dvr_snat node. This is a temporary work
-                    # around to prevent a race condition.
-                    external_gateway_info = {
-                        'network_id': CONF.network.public_network_id,
-                        'enable_snat': True}
-                    cls.admin_routers_client.update_router(
-                        cls.router['id'],
-                        external_gateway_info=external_gateway_info)
-
-    @classmethod
-    def resource_cleanup(cls):
-        if cls.is_dvr_router:
-            cls.routers_client.remove_router_interface(cls.router['id'],
-                                                       port_id=cls.port['id'])
-        super(L3AgentSchedulerTestJSON, cls).resource_cleanup()
 
     @decorators.idempotent_id('b7ce6e89-e837-4ded-9b78-9ed3c9c6a45a')
     def test_list_routers_on_l3_agent(self):
