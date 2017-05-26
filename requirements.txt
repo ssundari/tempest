@@ -24,4 +24,4 @@ urllib3>=1.15.1 # MIT
 debtcollector>=1.2.0 # Apache-2.0
 unittest2 # BSD
 UcsSdk
--e git+https://cloud-review.cisco.com/mercury/testrepo#egg=mercury-tempest-plugin
+-e git+https://cloud-review.cisco.com/mercury/testrepo#egg=tempest-plugin
