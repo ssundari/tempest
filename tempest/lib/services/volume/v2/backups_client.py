@@ -14,12 +14,14 @@
 #    under the License.
 
 from oslo_serialization import jsonutils as json
+from six.moves.urllib import parse as urllib
 
 from tempest.lib.common import rest_client
 from tempest.lib import exceptions as lib_exc
+from tempest.lib.services.volume import base_client
 
 
-class BackupsClient(rest_client.RestClient):
+class BackupsClient(base_client.BaseClient):
     """Volume V2 Backups client"""
     api_version = "v2"
 
@@ -63,11 +65,19 @@ class BackupsClient(rest_client.RestClient):
         self.expected_success(200, resp.status)
         return rest_client.ResponseBody(resp, body)
 
-    def list_backups(self, detail=False):
-        """Information for all the tenant's backups."""
+    def list_backups(self, detail=False, **params):
+        """List all the tenant's backups.
+
+        For a full list of available parameters, please refer to the official
+        API reference:
+        http://developer.openstack.org/api-ref/block-storage/v2/#list-backups
+        http://developer.openstack.org/api-ref/block-storage/v2/#list-backups-with-details
+        """
         url = "backups"
         if detail:
             url += "/detail"
+        if params:
+            url += '?%s' % urllib.urlencode(params)
         resp, body = self.get(url)
         body = json.loads(body)
         self.expected_success(200, resp.status)
@@ -102,3 +112,8 @@ class BackupsClient(rest_client.RestClient):
         except lib_exc.NotFound:
             return True
         return False
+
+    @property
+    def resource_type(self):
+        """Returns the primary type of resource this client works with."""
+        return 'backup'

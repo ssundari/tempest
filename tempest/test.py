@@ -26,10 +26,10 @@ import testtools
 
 from tempest import clients
 from tempest.common import credentials_factory as credentials
-from tempest.common import fixed_network
 import tempest.common.validation_resources as vresources
 from tempest import config
 from tempest.lib.common import cred_client
+from tempest.lib.common import fixed_network
 from tempest.lib import decorators
 from tempest.lib import exceptions as lib_exc
 
@@ -42,11 +42,6 @@ CONF = config.CONF
 idempotent_id = debtcollector.moves.moved_function(
     decorators.idempotent_id, 'idempotent_id', __name__,
     version='Mitaka', removal_version='?')
-
-
-related_bug = debtcollector.moves.moved_function(
-    decorators.related_bug, 'related_bug', __name__,
-    version='Pike', removal_version='?')
 
 
 attr = debtcollector.moves.moved_function(
@@ -63,7 +58,14 @@ def get_service_list():
         'compute': CONF.service_available.nova,
         'image': CONF.service_available.glance,
         'volume': CONF.service_available.cinder,
+        # NOTE(masayukig): We have two network services which are neutron and
+        # nova-network. And we have no way to know whether nova-network is
+        # available or not. After the pending removal of nova-network from
+        # nova, we can treat the network/neutron case in the same manner as
+        # the other services.
         'network': True,
+        # NOTE(masayukig): Tempest tests always require the identity service.
+        # So we should set this True here.
         'identity': True,
         'object_storage': CONF.service_available.swift,
     }
@@ -133,27 +135,6 @@ def is_extension_enabled(extension_name, service):
     if config_dict[service][0] == 'all':
         return True
     if extension_name in config_dict[service]:
-        return True
-    return False
-
-
-def is_scheduler_filter_enabled(filter_name):
-    """Check the list of enabled compute scheduler filters from config.
-
-    This function checks whether the given compute scheduler filter is
-    available and configured in the config file. If the
-    scheduler_available_filters option is set to 'all' (Default value. which
-    means default filters are configured in nova) in tempest.conf then, this
-    function returns True with assumption that requested filter 'filter_name'
-    is one of available filter in nova ("nova.scheduler.filters.all_filters").
-    """
-
-    filters = CONF.compute_feature_enabled.scheduler_available_filters
-    if not filters:
-        return False
-    if 'all' in filters:
-        return True
-    if filter_name in filters:
         return True
     return False
 
@@ -247,6 +228,9 @@ class BaseTestCase(testtools.testcase.WithAttributes,
 
     @classmethod
     def tearDownClass(cls):
+        # insert pdb breakpoint when pause_teardown is enabled
+        if CONF.pause_teardown:
+            cls.insert_pdb_breakpoint()
         at_exit_set.discard(cls)
         # It should never be overridden by descendants
         if hasattr(super(BaseTestCase, cls), 'tearDownClass'):
@@ -282,6 +266,22 @@ class BaseTestCase(testtools.testcase.WithAttributes,
                 six.reraise(etype, value, trace)
             finally:
                 del trace  # to avoid circular refs
+
+    def tearDown(self):
+        super(BaseTestCase, self).tearDown()
+        # insert pdb breakpoint when pause_teardown is enabled
+        if CONF.pause_teardown:
+            BaseTestCase.insert_pdb_breakpoint()
+
+    @classmethod
+    def insert_pdb_breakpoint(cls):
+        """Add pdb breakpoint.
+
+        This can help in debugging process, cleaning of resources is
+        paused, so they can be examined.
+        """
+        import pdb
+        pdb.set_trace()
 
     @classmethod
     def skip_checks(cls):
@@ -373,9 +373,9 @@ class BaseTestCase(testtools.testcase.WithAttributes,
     @classmethod
     def resource_setup(cls):
         """Class level resource setup for test cases."""
-        if hasattr(cls, "os"):
+        if hasattr(cls, "os_primary"):
             cls.validation_resources = vresources.create_validation_resources(
-                cls.os, cls.validation_resources)
+                cls.os_primary, cls.validation_resources)
         else:
             LOG.warning("Client manager not found, validation resources not"
                         " created")
@@ -388,8 +388,8 @@ class BaseTestCase(testtools.testcase.WithAttributes,
         resources, in case a failure during `resource_setup` should happen.
         """
         if cls.validation_resources:
-            if hasattr(cls, "os"):
-                vresources.clear_validation_resources(cls.os,
+            if hasattr(cls, "os_primary"):
+                vresources.clear_validation_resources(cls.os_primary,
                                                       cls.validation_resources)
                 cls.validation_resources = {}
             else:

@@ -15,9 +15,9 @@
 import testtools
 
 from tempest.api.compute import base
-from tempest.common import fixed_network
 from tempest.common import waiters
 from tempest import config
+from tempest.lib.common import fixed_network
 from tempest.lib.common.utils import data_utils
 from tempest.lib import decorators
 
@@ -142,7 +142,7 @@ class ListServerFiltersTestJSON(base.BaseV2ComputeTest):
         # Verify only the expected number of servers are returned
         params = {'limit': 0}
         servers = self.client.list_servers(**params)
-        self.assertEqual(0, len(servers['servers']))
+        self.assertEmpty(servers['servers'])
 
     @decorators.idempotent_id('37791bbd-90c0-4de0-831e-5f38cba9c6b3')
     def test_list_servers_filter_by_exceed_limit(self):
@@ -262,7 +262,7 @@ class ListServerFiltersTestJSON(base.BaseV2ComputeTest):
         # so as to ensure only one server is returned.
         ip_list = {}
         self.s1 = self.client.show_server(self.s1['id'])['server']
-        # Get first ip address inspite of v4 or v6
+        # Get first ip address in spite of v4 or v6
         ip_addr = self.s1['addresses'][self.fixed_network_name][0]['addr']
         ip_list[ip_addr] = self.s1['id']
 

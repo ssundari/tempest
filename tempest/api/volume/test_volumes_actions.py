@@ -38,7 +38,7 @@ class VolumesActionsTest(base.BaseVolumeTest):
     @test.services('compute')
     def test_attach_detach_volume_to_instance(self):
         # Create a server
-        server = self.create_server(wait_until='ACTIVE')
+        server = self.create_server()
         # Volume is attached and detached successfully from an instance
         self.volumes_client.attach_volume(self.volume['id'],
                                           instance_uuid=server['id'],
@@ -69,7 +69,7 @@ class VolumesActionsTest(base.BaseVolumeTest):
     @test.services('compute')
     def test_get_volume_attachment(self):
         # Create a server
-        server = self.create_server(wait_until='ACTIVE')
+        server = self.create_server()
         # Verify that a volume's attachment information is retrieved
         self.volumes_client.attach_volume(self.volume['id'],
                                           instance_uuid=server['id'],
@@ -115,12 +115,12 @@ class VolumesActionsTest(base.BaseVolumeTest):
     @decorators.idempotent_id('92c4ef64-51b2-40c0-9f7e-4749fbaaba33')
     def test_reserve_unreserve_volume(self):
         # Mark volume as reserved.
-        body = self.volumes_client.reserve_volume(self.volume['id'])
+        self.volumes_client.reserve_volume(self.volume['id'])
         # To get the volume info
         body = self.volumes_client.show_volume(self.volume['id'])['volume']
         self.assertIn('attaching', body['status'])
         # Unmark volume as reserved.
-        body = self.volumes_client.unreserve_volume(self.volume['id'])
+        self.volumes_client.unreserve_volume(self.volume['id'])
         # To get the volume info
         body = self.volumes_client.show_volume(self.volume['id'])['volume']
         self.assertIn('available', body['status'])

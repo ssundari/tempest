@@ -647,6 +647,9 @@ NetworkFeaturesGroup = [
     cfg.BoolOpt('port_security',
                 default=False,
                 help="Does the test environment support port security?"),
+    cfg.BoolOpt('floating_ips',
+                default=True,
+                help='Does the test environment support floating_ips')
 ]
 
 validation_group = cfg.OptGroup(name='validation',
@@ -765,6 +768,12 @@ VolumeGroup = [
                      "It contains two elements, the first is ref type "
                      "(like 'source-name', 'source-id', etc), the second is "
                      "volume name template used in storage backend"),
+    cfg.ListOpt('manage_snapshot_ref',
+                default=['source-name', '_snapshot-%s'],
+                help="A reference to existing snapshot for snapshot manage. "
+                     "It contains two elements, the first is ref type "
+                     "(like 'source-name', 'source-id', etc), the second is "
+                     "snapshot name template used in storage backend"),
     cfg.StrOpt('min_microversion',
                default=None,
                help="Lower version of the test target microversion range. "
@@ -823,7 +832,7 @@ VolumeFeaturesGroup = [
                 default=True,
                 help="Is the v2 volume API enabled"),
     cfg.BoolOpt('api_v3',
-                default=False,
+                default=True,
                 help="Is the v3 volume API enabled")
 ]
 
@@ -1061,6 +1070,15 @@ DefaultGroup = [
                                  "prefix to ideintify resources which are "
                                  "created by Tempest and no projects set "
                                  "this option on OpenStack dev community."),
+    cfg.BoolOpt('pause_teardown',
+                default=False,
+                help="""Whether to pause a test in global teardown.
+
+The best use case is investigating used resources of one test.
+A test can be run as follows:
+ $ ostestr --pdb TEST_ID
+or
+ $ python -m testtools.run TEST_ID"""),
 ]
 
 _opts = [

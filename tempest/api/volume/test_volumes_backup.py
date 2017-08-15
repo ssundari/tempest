@@ -108,7 +108,7 @@ class VolumesBackupsTest(base.BaseVolumeTest):
         volume = self.create_volume()
         self.addCleanup(self.volumes_client.delete_volume,
                         volume['id'])
-        server = self.create_server(wait_until='ACTIVE')
+        server = self.create_server()
         # Attach volume to instance
         self.attach_volume(server['id'], volume['id'])
         # Create backup using force flag
@@ -118,9 +118,8 @@ class VolumesBackupsTest(base.BaseVolumeTest):
                                     name=backup_name, force=True)
         self.assertEqual(backup_name, backup['name'])
 
-    @testtools.skipUnless(CONF.service_available.glance,
-                          "Glance is not available")
     @decorators.idempotent_id('2a8ba340-dff2-4511-9db7-646f07156b15')
+    @test.services('image')
     def test_bootable_volume_backup_and_restore(self):
         # Create volume from image
         img_uuid = CONF.compute.image_ref
@@ -141,3 +140,39 @@ class VolumesBackupsTest(base.BaseVolumeTest):
             restored_volume_id)['volume']
 
         self.assertEqual('true', restored_volume_info['bootable'])
+
+
+class VolumesBackupsV39Test(base.BaseVolumeTest):
+
+    _api_version = 3
+    min_microversion = '3.9'
+    max_microversion = 'latest'
+
+    @classmethod
+    def skip_checks(cls):
+        super(VolumesBackupsV39Test, cls).skip_checks()
+        if not CONF.volume_feature_enabled.backup:
+            raise cls.skipException("Cinder backup feature disabled")
+
+    @decorators.idempotent_id('9b374cbc-be5f-4d37-8848-7efb8a873dcc')
+    def test_update_backup(self):
+        # Create volume and backup
+        volume = self.create_volume()
+        backup = self.create_backup(volume_id=volume['id'])
+
+        # Update backup and assert response body for update_backup method
+        update_kwargs = {
+            'name': data_utils.rand_name(self.__class__.__name__ + '-Backup'),
+            'description': data_utils.rand_name("volume-backup-description")
+        }
+        update_backup = self.backups_client.update_backup(
+            backup['id'], **update_kwargs)['backup']
+        self.assertEqual(backup['id'], update_backup['id'])
+        self.assertEqual(update_kwargs['name'], update_backup['name'])
+        self.assertIn('links', update_backup)
+
+        # Assert response body for show_backup method
+        retrieved_backup = self.backups_client.show_backup(
+            backup['id'])['backup']
+        for key in update_kwargs:
+            self.assertEqual(update_kwargs[key], retrieved_backup[key])

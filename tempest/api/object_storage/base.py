@@ -43,8 +43,7 @@ def delete_containers(containers, container_client, object_client):
     for cont in containers:
         try:
             params = {'limit': 9999, 'format': 'json'}
-            resp, objlist = container_client.list_container_contents(
-                cont, params)
+            _, objlist = container_client.list_container_contents(cont, params)
             # delete every object in the container
             for obj in objlist:
                 test_utils.call_and_ignore_notfound_exc(
@@ -99,7 +98,7 @@ class BaseObjectTest(tempest.test.BaseTestCase):
         cls.policies = None
 
         if CONF.object_storage_feature_enabled.discoverability:
-            _, body = cls.capabilities_client.list_capabilities()
+            body = cls.capabilities_client.list_capabilities()
 
             if 'swift' in body and 'policies' in body['swift']:
                 cls.policies = body['swift']['policies']

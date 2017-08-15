@@ -15,6 +15,8 @@
 
 import time
 
+import six
+
 from tempest.api.compute import base
 from tempest.common import compute
 from tempest.common.utils import net_utils
@@ -49,7 +51,6 @@ class AttachInterfacesTestJSON(base.BaseV2ComputeTest):
         cls.subnets_client = cls.os_primary.subnets_client
         cls.ports_client = cls.os_primary.ports_client
 
-    # TODO(mriedem): move this into a common waiters utility module
     def wait_for_port_detach(self, port_id):
         """Waits for the port's device_id to be unset.
 
@@ -196,7 +197,7 @@ class AttachInterfacesTestJSON(base.BaseV2ComputeTest):
         except lib_exc.BadRequest as e:
             msg = ('Multiple possible networks found, use a Network ID to be '
                    'more specific.')
-            if not CONF.compute.fixed_network_name and e.message == msg:
+            if not CONF.compute.fixed_network_name and six.text_type(e) == msg:
                 raise
         else:
             ifs.append(iface)

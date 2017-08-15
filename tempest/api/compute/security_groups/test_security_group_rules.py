@@ -159,8 +159,8 @@ class SecurityGroupRulesTestJSON(base.BaseSecurityGroupsTest):
         # Get rules of the created Security Group
         rules = self.security_groups_client.show_security_group(
             securitygroup_id)['security_group']['rules']
-        self.assertTrue(any([i for i in rules if i['id'] == rule1_id]))
-        self.assertTrue(any([i for i in rules if i['id'] == rule2_id]))
+        self.assertNotEmpty([i for i in rules if i['id'] == rule1_id])
+        self.assertNotEmpty([i for i in rules if i['id'] == rule2_id])
 
     @decorators.idempotent_id('fc5c5acf-2091-43a6-a6ae-e42760e9ffaf')
     @test.services('network')
@@ -186,4 +186,4 @@ class SecurityGroupRulesTestJSON(base.BaseSecurityGroupsTest):
         rules = (self.security_groups_client.show_security_group(sg1_id)
                  ['security_group']['rules'])
         # The group1 has no rules because group2 has deleted
-        self.assertEqual(0, len(rules))
+        self.assertEmpty(rules)

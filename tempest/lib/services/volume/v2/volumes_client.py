@@ -21,10 +21,11 @@ from six.moves.urllib import parse as urllib
 
 from tempest.lib.common import rest_client
 from tempest.lib import exceptions as lib_exc
+from tempest.lib.services.volume import base_client
 from tempest.lib.services.volume.v2 import transfers_client
 
 
-class VolumesClient(rest_client.RestClient):
+class VolumesClient(base_client.BaseClient):
     """Client class to send CRUD Volume V2 API requests"""
     api_version = "v2"
 
@@ -72,6 +73,10 @@ class VolumesClient(rest_client.RestClient):
         """List all the volumes created.
 
         Params can be a string (must be urlencoded) or a dictionary.
+        For a full list of available parameters, please refer to the official
+        API reference:
+        http://developer.openstack.org/api-ref/block-storage/v2/#list-volumes-with-details
+        http://developer.openstack.org/api-ref/block-storage/v2/#list-volumes
         """
         url = 'volumes'
         if detail:
@@ -155,7 +160,12 @@ class VolumesClient(rest_client.RestClient):
         return rest_client.ResponseBody(resp, body)
 
     def set_bootable_volume(self, volume_id, **kwargs):
-        """set a bootable flag for a volume - true or false."""
+        """Set a bootable flag for a volume - true or false.
+
+        For a full list of available parameters, please refer to the official
+        API reference:
+        http://developer.openstack.org/api-ref/block-storage/v2/#update-volume-bootable-status
+        """
         post_body = json.dumps({'os-set_bootable': kwargs})
         url = 'volumes/%s/action' % (volume_id)
         resp, body = self.post(url, post_body)
@@ -239,7 +249,12 @@ class VolumesClient(rest_client.RestClient):
         return rest_client.ResponseBody(resp, body)
 
     def create_volume_metadata(self, volume_id, metadata):
-        """Create metadata for the volume."""
+        """Create metadata for the volume.
+
+        For a full list of available parameters, please refer to the official
+        API reference:
+        http://developer.openstack.org/api-ref/block-storage/v2/#create-volume-metadata
+        """
         put_body = json.dumps({'metadata': metadata})
         url = "volumes/%s/metadata" % volume_id
         resp, body = self.post(url, put_body)
@@ -256,10 +271,23 @@ class VolumesClient(rest_client.RestClient):
         return rest_client.ResponseBody(resp, body)
 
     def update_volume_metadata(self, volume_id, metadata):
-        """Update metadata for the volume."""
+        """Update metadata for the volume.
+
+        For a full list of available parameters, please refer to the official
+        API reference:
+        http://developer.openstack.org/api-ref/block-storage/v2/#update-volume-metadata
+        """
         put_body = json.dumps({'metadata': metadata})
         url = "volumes/%s/metadata" % volume_id
         resp, body = self.put(url, put_body)
+        body = json.loads(body)
+        self.expected_success(200, resp.status)
+        return rest_client.ResponseBody(resp, body)
+
+    def show_volume_metadata_item(self, volume_id, id):
+        """Show metadata item for the volume."""
+        url = "volumes/%s/metadata/%s" % (volume_id, id)
+        resp, body = self.get(url)
         body = json.loads(body)
         self.expected_success(200, resp.status)
         return rest_client.ResponseBody(resp, body)
@@ -281,10 +309,16 @@ class VolumesClient(rest_client.RestClient):
         return rest_client.ResponseBody(resp, body)
 
     def retype_volume(self, volume_id, **kwargs):
-        """Updates volume with new volume type."""
+        """Updates volume with new volume type.
+
+        For a full list of available parameters, please refer to the official
+        API reference:
+        https://developer.openstack.org/api-ref/block-storage/v2/#retype-volume
+        """
         post_body = json.dumps({'os-retype': kwargs})
         resp, body = self.post('volumes/%s/action' % volume_id, post_body)
         self.expected_success(202, resp.status)
+        return rest_client.ResponseBody(resp, body)
 
     def force_detach_volume(self, volume_id, **kwargs):
         """Force detach a volume.
@@ -321,7 +355,16 @@ class VolumesClient(rest_client.RestClient):
         self.expected_success(200, resp.status)
         return rest_client.ResponseBody(resp, body)
 
-    @removals.remove(message="use show_pools from tempest.lib.services."
+    def show_volume_image_metadata(self, volume_id):
+        """Show image metadata for the volume."""
+        post_body = json.dumps({'os-show_image_metadata': {}})
+        url = "volumes/%s/action" % volume_id
+        resp, body = self.post(url, post_body)
+        body = json.loads(body)
+        self.expected_success(200, resp.status)
+        return rest_client.ResponseBody(resp, body)
+
+    @removals.remove(message="use list_pools from tempest.lib.services."
                              "volume.v2.scheduler_stats_client")
     def show_pools(self, detail=False):
         # List all the volumes pools (hosts)

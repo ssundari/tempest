@@ -32,7 +32,6 @@ class ServersAdminNegativeTestJSON(base.BaseV2ComputeAdminTest):
     def setup_clients(cls):
         super(ServersAdminNegativeTestJSON, cls).setup_clients()
         cls.client = cls.os_admin.servers_client
-        cls.non_adm_client = cls.servers_client
         cls.quotas_client = cls.os_admin.quotas_client
 
     @classmethod
@@ -106,14 +105,6 @@ class ServersAdminNegativeTestJSON(base.BaseV2ComputeAdminTest):
     def test_reset_state_server_nonexistent_server(self):
         self.assertRaises(lib_exc.NotFound,
                           self.client.reset_state, '999', state='error')
-
-    @decorators.attr(type=['negative'])
-    @decorators.idempotent_id('e84e2234-60d2-42fa-8b30-e2d3049724ac')
-    def test_get_server_diagnostics_by_non_admin(self):
-        # Non-admin user can not view server diagnostics according to policy
-        self.assertRaises(lib_exc.Forbidden,
-                          self.non_adm_client.show_server_diagnostics,
-                          self.s1_id)
 
     @decorators.attr(type=['negative'])
     @decorators.idempotent_id('46a4e1ca-87ae-4d28-987a-1b6b136a0221')

@@ -47,40 +47,42 @@ class ScenarioTest(tempest.test.BaseTestCase):
     def setup_clients(cls):
         super(ScenarioTest, cls).setup_clients()
         # Clients (in alphabetical order)
-        cls.flavors_client = cls.manager.flavors_client
+        cls.flavors_client = cls.os_primary.flavors_client
         cls.compute_floating_ips_client = (
-            cls.manager.compute_floating_ips_client)
+            cls.os_primary.compute_floating_ips_client)
         if CONF.service_available.glance:
             # Check if glance v1 is available to determine which client to use.
             if CONF.image_feature_enabled.api_v1:
-                cls.image_client = cls.manager.image_client
+                cls.image_client = cls.os_primary.image_client
             elif CONF.image_feature_enabled.api_v2:
-                cls.image_client = cls.manager.image_client_v2
+                cls.image_client = cls.os_primary.image_client_v2
             else:
                 raise lib_exc.InvalidConfiguration(
                     'Either api_v1 or api_v2 must be True in '
                     '[image-feature-enabled].')
         # Compute image client
-        cls.compute_images_client = cls.manager.compute_images_client
-        cls.keypairs_client = cls.manager.keypairs_client
+        cls.compute_images_client = cls.os_primary.compute_images_client
+        cls.keypairs_client = cls.os_primary.keypairs_client
         # Nova security groups client
         cls.compute_security_groups_client = (
-            cls.manager.compute_security_groups_client)
+            cls.os_primary.compute_security_groups_client)
         cls.compute_security_group_rules_client = (
-            cls.manager.compute_security_group_rules_client)
-        cls.servers_client = cls.manager.servers_client
-        cls.interface_client = cls.manager.interfaces_client
+            cls.os_primary.compute_security_group_rules_client)
+        cls.servers_client = cls.os_primary.servers_client
+        cls.interface_client = cls.os_primary.interfaces_client
         # Neutron network client
-        cls.networks_client = cls.manager.networks_client
-        cls.ports_client = cls.manager.ports_client
-        cls.routers_client = cls.manager.routers_client
-        cls.subnets_client = cls.manager.subnets_client
-        cls.floating_ips_client = cls.manager.floating_ips_client
-        cls.security_groups_client = cls.manager.security_groups_client
+        cls.networks_client = cls.os_primary.networks_client
+        cls.ports_client = cls.os_primary.ports_client
+        cls.routers_client = cls.os_primary.routers_client
+        cls.subnets_client = cls.os_primary.subnets_client
+        cls.floating_ips_client = cls.os_primary.floating_ips_client
+        cls.security_groups_client = cls.os_primary.security_groups_client
         cls.security_group_rules_client = (
-            cls.manager.security_group_rules_client)
-        cls.volumes_client = cls.manager.volumes_v2_client
-        cls.snapshots_client = cls.manager.snapshots_v2_client
+            cls.os_primary.security_group_rules_client)
+        # Use the latest available volume clients
+        if CONF.service_available.cinder:
+            cls.volumes_client = cls.os_primary.volumes_client_latest
+            cls.snapshots_client = cls.os_primary.snapshots_client_latest
 
     # ## Test functions library
     #
@@ -133,7 +135,7 @@ class ScenarioTest(tempest.test.BaseTestCase):
 
         # Needed for the cross_tenant_traffic test:
         if clients is None:
-            clients = self.manager
+            clients = self.os_primary
 
         if name is None:
             name = data_utils.rand_name(self.__class__.__name__ + "-server")
@@ -195,7 +197,7 @@ class ScenarioTest(tempest.test.BaseTestCase):
 
         tenant_network = self.get_tenant_network()
 
-        body, servers = compute.create_test_server(
+        body, _ = compute.create_test_server(
             clients,
             tenant_network=tenant_network,
             wait_until=wait_until,
@@ -238,9 +240,26 @@ class ScenarioTest(tempest.test.BaseTestCase):
         volume = self.volumes_client.show_volume(volume['id'])['volume']
         return volume
 
+    def create_volume_snapshot(self, volume_id, name=None, description=None,
+                               metadata=None, force=False):
+        name = name or data_utils.rand_name(
+            self.__class__.__name__ + '-snapshot')
+        snapshot = self.snapshots_client.create_snapshot(
+            volume_id=volume_id,
+            force=force,
+            display_name=name,
+            description=description,
+            metadata=metadata)['snapshot']
+        self.addCleanup(self.snapshots_client.wait_for_resource_deletion,
+                        snapshot['id'])
+        self.addCleanup(self.snapshots_client.delete_snapshot, snapshot['id'])
+        waiters.wait_for_volume_resource_status(self.snapshots_client,
+                                                snapshot['id'], 'available')
+        return snapshot
+
     def create_volume_type(self, client=None, name=None, backend_name=None):
         if not client:
-            client = self.admin_volume_types_client
+            client = self.os_admin.volume_types_v2_client
         if not name:
             class_name = self.__class__.__name__
             name = data_utils.rand_name(class_name + '-volume-type')
@@ -313,13 +332,15 @@ class ScenarioTest(tempest.test.BaseTestCase):
 
         return secgroup
 
-    def get_remote_client(self, ip_address, username=None, private_key=None):
+    def get_remote_client(self, ip_address, username=None, private_key=None,
+                          server=None):
         """Get a SSH client to a remote server
 
         @param ip_address the server floating or fixed IP address to use
                           for ssh validation
         @param username name of the Linux account on the remote server
         @param private_key the SSH private key to use
+        @param server: server dict, used for debugging purposes
         @return a RemoteClient object
         """
 
@@ -334,22 +355,10 @@ class ScenarioTest(tempest.test.BaseTestCase):
         else:
             password = CONF.validation.image_ssh_password
             private_key = None
-        linux_client = remote_client.RemoteClient(ip_address, username,
-                                                  pkey=private_key,
-                                                  password=password)
-        try:
-            linux_client.validate_authentication()
-        except Exception as e:
-            message = ('Initializing SSH connection to %(ip)s failed. '
-                       'Error: %(error)s' % {'ip': ip_address,
-                                             'error': e})
-            caller = test_utils.find_test_caller()
-            if caller:
-                message = '(%s) %s' % (caller, message)
-            LOG.exception(message)
-            self._log_console_output()
-            raise
-
+        linux_client = remote_client.RemoteClient(
+            ip_address, username, pkey=private_key, password=password,
+            server=server, servers_client=self.servers_client)
+        linux_client.validate_authentication()
         return linux_client
 
     def _image_create(self, name, fmt, path,
@@ -741,7 +750,7 @@ class NetworkScenarioTest(ScenarioTest):
             :returns: True if subnet with cidr already exist in tenant
                   False else
             """
-            cidr_in_use = self.admin_manager.subnets_client.list_subnets(
+            cidr_in_use = self.os_admin.subnets_client.list_subnets(
                 tenant_id=tenant_id, cidr=cidr)['subnets']
             return len(cidr_in_use) != 0
 
@@ -790,7 +799,7 @@ class NetworkScenarioTest(ScenarioTest):
         return subnet
 
     def _get_server_port_id_and_ip4(self, server, ip_addr=None):
-        ports = self.admin_manager.ports_client.list_ports(
+        ports = self.os_admin.ports_client.list_ports(
             device_id=server['id'], fixed_ip=ip_addr)['ports']
         # A port can have more than one IP address in some cases.
         # If the network is dual-stack (IPv4 + IPv6), this port is associated
@@ -811,7 +820,7 @@ class NetworkScenarioTest(ScenarioTest):
         if inactive:
             LOG.warning("Instance has ports that are not ACTIVE: %s", inactive)
 
-        self.assertNotEqual(0, len(port_map),
+        self.assertNotEmpty(port_map,
                             "No IPv4 addresses found in: %s" % ports)
         self.assertEqual(len(port_map), 1,
                          "Found multiple IPv4 addresses: %s. "
@@ -820,9 +829,9 @@ class NetworkScenarioTest(ScenarioTest):
         return port_map[0]
 
     def _get_network_by_name(self, network_name):
-        net = self.admin_manager.networks_client.list_networks(
+        net = self.os_admin.networks_client.list_networks(
             name=network_name)['networks']
-        self.assertNotEqual(len(net), 0,
+        self.assertNotEmpty(net,
                             "Unable to get network by name: %s" % network_name)
         return net[0]
 
@@ -1029,7 +1038,7 @@ class NetworkScenarioTest(ScenarioTest):
             if sg['tenant_id'] == tenant_id and sg['name'] == 'default'
         ]
         msg = "No default security group for tenant %s." % (tenant_id)
-        self.assertGreater(len(sgs), 0, msg)
+        self.assertNotEmpty(sgs, msg)
         return sgs[0]
 
     def _create_security_group_rule(self, secgroup=None,
@@ -1258,6 +1267,17 @@ class EncryptionScenarioTest(ScenarioTest):
         client.create_encryption_type(
             type_id, provider=provider, key_size=key_size, cipher=cipher,
             control_location=control_location)['encryption']
+
+    def create_encrypted_volume(self, encryption_provider, volume_type,
+                                key_size=256, cipher='aes-xts-plain64',
+                                control_location='front-end'):
+        volume_type = self.create_volume_type(name=volume_type)
+        self.create_encryption_type(type_id=volume_type['id'],
+                                    provider=encryption_provider,
+                                    key_size=key_size,
+                                    cipher=cipher,
+                                    control_location=control_location)
+        return self.create_volume(volume_type=volume_type['name'])
 
 
 class ObjectStorageScenarioTest(ScenarioTest):

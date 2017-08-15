@@ -84,12 +84,6 @@ class ListServersNegativeTestJSON(base.BaseV2ComputeTest):
         servers = body['servers']
         self.assertEmpty(servers)
 
-    @decorators.idempotent_id('12c80a9f-2dec-480e-882b-98ba15757659')
-    def test_list_servers_by_limits(self):
-        # List servers by specifying limits
-        body = self.client.list_servers(limit=1)
-        self.assertEqual(1, len([x for x in body['servers'] if 'id' in x]))
-
     @decorators.attr(type=['negative'])
     @decorators.idempotent_id('d47c17fb-eebd-4287-8e95-f20a7e627b18')
     def test_list_servers_by_limits_greater_than_actual_count(self):
@@ -128,7 +122,7 @@ class ListServersNegativeTestJSON(base.BaseV2ComputeTest):
         # Return an empty list when a date in the future is passed
         changes_since = {'changes-since': '2051-01-01T12:34:00Z'}
         body = self.client.list_servers(**changes_since)
-        self.assertEqual(0, len(body['servers']))
+        self.assertEmpty(body['servers'])
 
     @decorators.attr(type=['negative'])
     @decorators.idempotent_id('93055106-2d34-46fe-af68-d9ddbf7ee570')

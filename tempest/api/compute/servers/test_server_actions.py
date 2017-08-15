@@ -33,8 +33,6 @@ LOG = logging.getLogger(__name__)
 
 
 class ServerActionsTestJSON(base.BaseV2ComputeTest):
-    run_ssh = CONF.validation.run_validation
-
     def setUp(self):
         # NOTE(afazekas): Normally we use the same server with all test cases,
         # but if it has an issue, we build a new one
@@ -166,8 +164,7 @@ class ServerActionsTestJSON(base.BaseV2ComputeTest):
                .format(image_ref, rebuilt_server['image']['id']))
         self.assertEqual(image_ref, rebuilt_server['image']['id'], msg)
 
-    @decorators.idempotent_id('aaa6cdf3-55a7-461a-add9-1c8596b9a07c')
-    def test_rebuild_server(self):
+    def _test_rebuild_server(self):
         # Get the IPs the server has before rebuilding it
         original_addresses = (self.client.show_server(self.server_id)['server']
                               ['addresses'])
@@ -218,6 +215,10 @@ class ServerActionsTestJSON(base.BaseV2ComputeTest):
                 servers_client=self.client)
             linux_client.validate_authentication()
 
+    @decorators.idempotent_id('aaa6cdf3-55a7-461a-add9-1c8596b9a07c')
+    def test_rebuild_server(self):
+        self._test_rebuild_server()
+
     @decorators.idempotent_id('30449a88-5aff-4f9b-9866-6ee9b17f906d')
     def test_rebuild_server_in_stop_state(self):
         # The server in stop state  should be rebuilt using the provided
@@ -260,7 +261,7 @@ class ServerActionsTestJSON(base.BaseV2ComputeTest):
         self.attach_volume(server, volume)
 
         # run general rebuild test
-        self.test_rebuild_server()
+        self._test_rebuild_server()
 
         # make sure the volume is attached to the instance after rebuild
         vol_after_rebuild = self.volumes_client.show_volume(volume['id'])
@@ -517,19 +518,33 @@ class ServerActionsTestJSON(base.BaseV2ComputeTest):
     @decorators.idempotent_id('77eba8e0-036e-4635-944b-f7a8f3b78dc9')
     @testtools.skipUnless(CONF.compute_feature_enabled.shelve,
                           'Shelve is not available.')
+    @test.services('image')
     def test_shelve_unshelve_server(self):
+        if CONF.image_feature_enabled.api_v2:
+            glance_client = self.os_primary.image_client_v2
+        elif CONF.image_feature_enabled.api_v1:
+            glance_client = self.os_primary.image_client
+        else:
+            raise lib_exc.InvalidConfiguration(
+                'Either api_v1 or api_v2 must be True in '
+                '[image-feature-enabled].')
         compute.shelve_server(self.client, self.server_id,
                               force_shelve_offload=True)
 
         server = self.client.show_server(self.server_id)['server']
         image_name = server['name'] + '-shelved'
         params = {'name': image_name}
-        images = self.compute_images_client.list_images(**params)['images']
+        if CONF.image_feature_enabled.api_v2:
+            images = glance_client.list_images(params)['images']
+        elif CONF.image_feature_enabled.api_v1:
+            images = glance_client.list_images(
+                detail=True, **params)['images']
         self.assertEqual(1, len(images))
         self.assertEqual(image_name, images[0]['name'])
 
         self.client.unshelve_server(self.server_id)
         waiters.wait_for_server_status(self.client, self.server_id, 'ACTIVE')
+        glance_client.wait_for_resource_deletion(images[0]['id'])
 
     @decorators.idempotent_id('af8eafd4-38a7-4a4b-bdbc-75145a580560')
     def test_stop_start_server(self):

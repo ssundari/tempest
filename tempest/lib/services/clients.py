@@ -17,10 +17,12 @@
 import copy
 import importlib
 import inspect
+import sys
 import warnings
 
 from debtcollector import removals
 from oslo_log import log as logging
+import testtools
 
 from tempest.lib import auth
 from tempest.lib.common.utils import misc
@@ -99,6 +101,7 @@ def available_modules():
     extra_service_versions = set([])
     _tempest_modules = set(tempest_modules())
     plugin_services = ClientsRegistry().get_service_clients()
+    name_conflicts = []
     for plugin_name in plugin_services:
         plug_service_versions = set([x['service_version'] for x in
                                      plugin_services[plugin_name]])
@@ -110,8 +113,8 @@ def available_modules():
                     'claimed by another one' % (plugin_name,
                                                 extra_service_versions &
                                                 plug_service_versions))
-                raise exceptions.PluginRegistrationException(
-                    name=plugin_name, detailed_error=detailed_error)
+                name_conflicts.append(exceptions.PluginRegistrationException(
+                    name=plugin_name, detailed_error=detailed_error))
             # NOTE(andreaf) Once all tempest clients are stable, the following
             # if will have to be removed.
             if not plug_service_versions.isdisjoint(
@@ -121,9 +124,14 @@ def available_modules():
                     'claimed by a Tempest one' % (plugin_name,
                                                   _tempest_internal_modules() &
                                                   plug_service_versions))
-                raise exceptions.PluginRegistrationException(
-                    name=plugin_name, detailed_error=detailed_error)
+                name_conflicts.append(exceptions.PluginRegistrationException(
+                    name=plugin_name, detailed_error=detailed_error))
         extra_service_versions |= plug_service_versions
+    if name_conflicts:
+        LOG.error(
+            'Failed to list available modules due to name conflicts: %s',
+            name_conflicts)
+        raise testtools.MultipleExceptions(*name_conflicts)
     return _tempest_modules | extra_service_versions
 
 
@@ -175,7 +183,7 @@ class ClientsFactory(object):
         :param kwargs: Parameters to be passed to all clients. Parameters
             values can be overwritten when clients are initialised, but
             parameters cannot be deleted.
-        :raise ImportError if the specified module_path cannot be imported
+        :raise ImportError: if the specified module_path cannot be imported
 
         Example::
 
@@ -389,6 +397,7 @@ class ServiceClients(object):
         # Register service clients from the registry (__tempest__ and plugins)
         clients_registry = ClientsRegistry()
         plugin_service_clients = clients_registry.get_service_clients()
+        registration_errors = []
         for plugin in plugin_service_clients:
             service_clients = plugin_service_clients[plugin]
             # Each plugin returns a list of service client parameters
@@ -399,10 +408,12 @@ class ServiceClients(object):
                 try:
                     self.register_service_client_module(**service_client)
                 except Exception:
+                    registration_errors.append(sys.exc_info())
                     LOG.exception(
                         'Failed to register service client from plugin %s '
                         'with parameters %s', plugin, service_client)
-                    raise
+        if registration_errors:
+            raise testtools.MultipleExceptions(*registration_errors)
 
     def register_service_client_module(self, name, service_version,
                                        module_path, client_names, **kwargs):

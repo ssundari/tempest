@@ -170,7 +170,7 @@ class VolumesNegativeTest(base.BaseVolumeTest):
     @decorators.idempotent_id('f5e56b0a-5d02-43c1-a2a7-c9b792c2e3f6')
     @test.services('compute')
     def test_attach_volumes_with_nonexistent_volume_id(self):
-        server = self.create_server(wait_until='ACTIVE')
+        server = self.create_server()
 
         self.assertRaises(lib_exc.NotFound,
                           self.volumes_client.attach_volume,
@@ -261,7 +261,7 @@ class VolumesNegativeTest(base.BaseVolumeTest):
         params = {'name': v_name}
         fetched_volume = self.volumes_client.list_volumes(
             params=params)['volumes']
-        self.assertEqual(0, len(fetched_volume))
+        self.assertEmpty(fetched_volume)
 
     @decorators.attr(type=['negative'])
     @decorators.idempotent_id('9ca17820-a0e7-4cbd-a7fa-f4468735e359')
@@ -271,7 +271,7 @@ class VolumesNegativeTest(base.BaseVolumeTest):
         fetched_volume = \
             self.volumes_client.list_volumes(
                 detail=True, params=params)['volumes']
-        self.assertEqual(0, len(fetched_volume))
+        self.assertEmpty(fetched_volume)
 
     @decorators.attr(type=['negative'])
     @decorators.idempotent_id('143b279b-7522-466b-81be-34a87d564a7c')
@@ -279,7 +279,7 @@ class VolumesNegativeTest(base.BaseVolumeTest):
         params = {'status': 'null'}
         fetched_volume = self.volumes_client.list_volumes(
             params=params)['volumes']
-        self.assertEqual(0, len(fetched_volume))
+        self.assertEmpty(fetched_volume)
 
     @decorators.attr(type=['negative'])
     @decorators.idempotent_id('ba94b27b-be3f-496c-a00e-0283b373fa75')
@@ -288,7 +288,7 @@ class VolumesNegativeTest(base.BaseVolumeTest):
         fetched_volume = \
             self.volumes_client.list_volumes(detail=True,
                                              params=params)['volumes']
-        self.assertEqual(0, len(fetched_volume))
+        self.assertEmpty(fetched_volume)
 
     @decorators.attr(type=['negative'])
     @decorators.idempotent_id('5b810c91-0ad1-47ce-aee8-615f789be78f')

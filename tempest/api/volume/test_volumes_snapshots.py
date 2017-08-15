@@ -10,6 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import testtools
 from testtools import matchers
 
 from tempest.api.volume import base
@@ -39,7 +40,7 @@ class VolumesSnapshotTestJSON(base.BaseVolumeTest):
     @test.services('compute')
     def test_snapshot_create_delete_with_volume_in_use(self):
         # Create a test instance
-        server = self.create_server(wait_until='ACTIVE')
+        server = self.create_server()
         self.attach_volume(server['id'], self.volume_origin['id'])
 
         # Snapshot a volume which attached to an instance with force=False
@@ -65,7 +66,7 @@ class VolumesSnapshotTestJSON(base.BaseVolumeTest):
         snapshot1 = self.create_snapshot(self.volume_origin['id'])
 
         # Create a server and attach it
-        server = self.create_server(wait_until='ACTIVE')
+        server = self.create_server()
         self.attach_volume(server['id'], self.volume_origin['id'])
 
         # Now that the volume is attached, create another snapshots
@@ -149,3 +150,16 @@ class VolumesSnapshotTestJSON(base.BaseVolumeTest):
         # Should allow
         self.assertEqual(volume['snapshot_id'], src_snap['id'])
         self.assertEqual(volume['size'], src_size + 1)
+
+    @decorators.idempotent_id('bbcfa285-af7f-479e-8c1a-8c34fc16543c')
+    @testtools.skipUnless(CONF.volume_feature_enabled.backup,
+                          "Cinder backup is disabled")
+    def test_snapshot_backup(self):
+        # Create a snapshot
+        snapshot = self.create_snapshot(volume_id=self.volume_origin['id'])
+
+        backup = self.create_backup(volume_id=self.volume_origin['id'],
+                                    snapshot_id=snapshot['id'])
+        backup_info = self.backups_client.show_backup(backup['id'])['backup']
+        self.assertEqual(self.volume_origin['id'], backup_info['volume_id'])
+        self.assertEqual(snapshot['id'], backup_info['snapshot_id'])

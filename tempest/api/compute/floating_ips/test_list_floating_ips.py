@@ -24,6 +24,12 @@ CONF = config.CONF
 class FloatingIPDetailsTestJSON(base.BaseV2ComputeTest):
 
     @classmethod
+    def skip_checks(cls):
+        super(FloatingIPDetailsTestJSON, cls).skip_checks()
+        if not CONF.network_feature_enabled.floating_ips:
+            raise cls.skipException("Floating ips are not available")
+
+    @classmethod
     def setup_clients(cls):
         super(FloatingIPDetailsTestJSON, cls).setup_clients()
         cls.client = cls.floating_ips_client
@@ -52,7 +58,7 @@ class FloatingIPDetailsTestJSON(base.BaseV2ComputeTest):
         # Positive test:Should return the list of floating IPs
         body = self.client.list_floating_ips()['floating_ips']
         floating_ips = body
-        self.assertNotEqual(0, len(floating_ips),
+        self.assertNotEmpty(floating_ips,
                             "Expected floating IPs. Got zero.")
         for i in range(3):
             self.assertIn(self.floating_ip[i], floating_ips)
@@ -84,5 +90,5 @@ class FloatingIPDetailsTestJSON(base.BaseV2ComputeTest):
     def test_list_floating_ip_pools(self):
         # Positive test:Should return the list of floating IP Pools
         floating_ip_pools = self.pools_client.list_floating_ip_pools()
-        self.assertNotEqual(0, len(floating_ip_pools['floating_ip_pools']),
+        self.assertNotEmpty(floating_ip_pools['floating_ip_pools'],
                             "Expected floating IP Pools. Got zero.")

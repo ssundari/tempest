@@ -44,6 +44,9 @@ class TempestException(Exception):
     def __str__(self):
         return self._error_string
 
+    def __repr__(self):
+        return self._error_string
+
 
 class RestClientException(TempestException,
                           testtools.TestCase.failureException):
@@ -269,3 +272,7 @@ class VolumeBackupException(TempestException):
 class DeleteErrorException(TempestException):
     message = ("Resource %(resource_id)s failed to delete "
                "and is in ERROR status")
+
+
+class InvalidTestResource(TempestException):
+    message = "%(name)s is not a valid %(type)s, or the name is ambiguous"

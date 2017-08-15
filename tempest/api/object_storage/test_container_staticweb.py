@@ -27,7 +27,7 @@ class StaticWebTest(base.BaseObjectTest):
         super(StaticWebTest, cls).resource_setup()
 
         # This header should be posted on the container before every test
-        cls.headers_public_read_acl = {'Read': '.r:*,.rlistings'}
+        headers_public_read_acl = {'Read': '.r:*,.rlistings'}
 
         # Create test container and create one object in it
         cls.container_name = cls.create_container()
@@ -36,7 +36,7 @@ class StaticWebTest(base.BaseObjectTest):
 
         cls.container_client.update_container_metadata(
             cls.container_name,
-            metadata=cls.headers_public_read_acl,
+            metadata=headers_public_read_acl,
             metadata_prefix="X-Container-")
 
     @classmethod
@@ -124,9 +124,8 @@ class StaticWebTest(base.BaseObjectTest):
 
         # test GET on http://account_url/container_name
         # we should retrieve a listing of objects
-        resp, body = self.account_client.request("GET",
-                                                 self.container_name,
-                                                 headers={})
+        _, body = self.account_client.request("GET", self.container_name,
+                                              headers={})
         self.assertIn(self.object_name, body.decode())
         css = '<link rel="stylesheet" type="text/css" href="listings.css" />'
         self.assertIn(css, body.decode())

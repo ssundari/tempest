@@ -51,6 +51,8 @@ class TestGettingAddress(manager.NetworkScenarioTest):
         if CONF.network.shared_physical_network:
             msg = 'Deployment uses a shared physical network'
             raise cls.skipException(msg)
+        if not CONF.network_feature_enabled.floating_ips:
+            raise cls.skipException("Floating ips are not available")
 
     @classmethod
     def setup_credentials(cls):
@@ -129,7 +131,7 @@ class TestGettingAddress(manager.NetworkScenarioTest):
         ips = self.define_server_ips(srv=srv)
         ssh = self.get_remote_client(
             ip_address=fip['floating_ip_address'],
-            username=username)
+            username=username, server=srv)
         return ssh, ips, srv["id"]
 
     def turn_nic6_on(self, ssh, sid, network_id):
@@ -144,7 +146,7 @@ class TestGettingAddress(manager.NetworkScenarioTest):
         """
         ports = [
             p["mac_address"] for p in
-            self.admin_manager.ports_client.list_ports(
+            self.os_admin.ports_client.list_ports(
                 device_id=sid, network_id=network_id)['ports']
         ]
 
@@ -169,7 +171,7 @@ class TestGettingAddress(manager.NetworkScenarioTest):
 
         # Turn on 2nd NIC for Cirros when dualnet
         if dualnet:
-            network, network_v6 = net_list
+            _, network_v6 = net_list
             self.turn_nic6_on(sshv4_1, sid1, network_v6['id'])
             self.turn_nic6_on(sshv4_2, sid2, network_v6['id'])
 

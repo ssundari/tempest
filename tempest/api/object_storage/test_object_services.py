@@ -48,7 +48,7 @@ class ObjectTest(base.BaseObjectTest):
         data_segments = [data + str(i) for i in range(segments)]
         # uploading segments
         for i in range(segments):
-            resp, _ = self.object_client.create_object_segments(
+            self.object_client.create_object_segments(
                 self.container_name, object_name, i, data_segments[i])
 
         return object_name, data_segments
@@ -184,7 +184,7 @@ class ObjectTest(base.BaseObjectTest):
         # create object with transfer_encoding
         object_name = data_utils.rand_name(name='TestObject')
         data = data_utils.random_bytes(1024)
-        status, _, resp_headers = self.object_client.put_object_with_chunk(
+        _, _, resp_headers = self.object_client.put_object_with_chunk(
             container=self.container_name,
             name=object_name,
             contents=data_utils.chunkify(data, 512)
@@ -394,7 +394,7 @@ class ObjectTest(base.BaseObjectTest):
         # update object metadata with x_object_manifest
 
         # uploading segments
-        object_name, data_segments = self._upload_segments()
+        object_name, _ = self._upload_segments()
         # creating a manifest file
         data_empty = ''
         self.object_client.create_object(self.container_name,
@@ -414,7 +414,7 @@ class ObjectTest(base.BaseObjectTest):
             self.container_name,
             object_name)
         self.assertIn('x-object-manifest', resp)
-        self.assertNotEqual(len(resp['x-object-manifest']), 0)
+        self.assertNotEmpty(resp['x-object-manifest'])
 
     @decorators.idempotent_id('0dbbe89c-6811-4d84-a2df-eca2bdd40c0e')
     def test_update_object_metadata_with_x_object_metakey(self):
@@ -494,7 +494,7 @@ class ObjectTest(base.BaseObjectTest):
         # get object metadata with x_object_manifest
 
         # uploading segments
-        object_name, data_segments = self._upload_segments()
+        object_name, _ = self._upload_segments()
         # creating a manifest file
         object_prefix = '%s/%s' % (self.container_name, object_name)
         metadata = {'X-Object-Manifest': object_prefix}
@@ -520,11 +520,11 @@ class ObjectTest(base.BaseObjectTest):
         self.assertTrue(resp['etag'].startswith('\"'))
         self.assertTrue(resp['etag'].endswith('\"'))
         self.assertTrue(resp['etag'].strip('\"').isalnum())
-        self.assertTrue(re.match("^\d+\.?\d*\Z", resp['x-timestamp']))
-        self.assertNotEqual(len(resp['content-type']), 0)
+        self.assertTrue(re.match(r"^\d+\.?\d*\Z", resp['x-timestamp']))
+        self.assertNotEmpty(resp['content-type'])
         self.assertTrue(re.match("^tx[0-9a-f]{21}-[0-9a-f]{10}.*",
                                  resp['x-trans-id']))
-        self.assertNotEqual(len(resp['date']), 0)
+        self.assertNotEmpty(resp['date'])
         self.assertEqual(resp['accept-ranges'], 'bytes')
         self.assertEqual(resp['x-object-manifest'],
                          '%s/%s' % (self.container_name, object_name))
@@ -612,11 +612,11 @@ class ObjectTest(base.BaseObjectTest):
         self.assertTrue(resp['etag'].startswith('\"'))
         self.assertTrue(resp['etag'].endswith('\"'))
         self.assertTrue(resp['etag'].strip('\"').isalnum())
-        self.assertTrue(re.match("^\d+\.?\d*\Z", resp['x-timestamp']))
-        self.assertNotEqual(len(resp['content-type']), 0)
+        self.assertTrue(re.match(r"^\d+\.?\d*\Z", resp['x-timestamp']))
+        self.assertNotEmpty(resp['content-type'])
         self.assertTrue(re.match("^tx[0-9a-f]{21}-[0-9a-f]{10}.*",
                                  resp['x-trans-id']))
-        self.assertNotEqual(len(resp['date']), 0)
+        self.assertNotEmpty(resp['date'])
         self.assertEqual(resp['accept-ranges'], 'bytes')
         self.assertEqual(resp['x-object-manifest'],
                          '%s/%s' % (self.container_name, object_name))
@@ -955,7 +955,7 @@ class ObjectTest(base.BaseObjectTest):
         local_data = "something different"
         md5 = hashlib.md5(local_data.encode()).hexdigest()
         headers = {'If-None-Match': md5}
-        resp, body = self.object_client.get(url, headers=headers)
+        resp, _ = self.object_client.get(url, headers=headers)
         self.assertHeaders(resp, 'Object', 'GET')
 
 
@@ -973,7 +973,7 @@ class PublicObjectTest(base.BaseObjectTest):
     @classmethod
     def setup_clients(cls):
         super(PublicObjectTest, cls).setup_clients()
-        cls.identity_client_alt = cls.os_alt.identity_client
+        cls.object_client_alt = cls.os_alt.object_client
 
     def setUp(self):
         super(PublicObjectTest, self).setUp()
@@ -1047,7 +1047,7 @@ class PublicObjectTest(base.BaseObjectTest):
         self.assertEqual(resp['x-container-read'], '.r:*,.rlistings')
 
         # get auth token of alternative user
-        alt_auth_data = self.identity_client_alt.auth_provider.auth_data
+        alt_auth_data = self.object_client_alt.auth_provider.auth_data
         self.object_client.auth_provider.set_alt_auth_data(
             request_part='headers',
             auth_data=alt_auth_data

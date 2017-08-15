@@ -179,24 +179,27 @@ def wait_for_image_status(client, image_id, status):
     raise lib_exc.TimeoutException(message)
 
 
-def wait_for_volume_resource_status(client, resource_id, status):
-    """Waits for a volume resource to reach a given status.
+def wait_for_volume_resource_status(client, resource_id, statuses):
+    """Waits for a volume resource to reach any of the specified statuses.
 
     This function is a common function for volume, snapshot and backup
     resources. The function extracts the name of the desired resource from
     the client class name of the resource.
     """
-    resource_name = re.findall(r'(Volume|Snapshot|Backup)',
-                               client.__class__.__name__)[0].lower()
+    if not isinstance(statuses, list):
+        statuses = [statuses]
+    resource_name = re.findall(
+        r'(volume|group-snapshot|snapshot|backup|group)',
+        client.resource_type)[-1].replace('-', '_')
     show_resource = getattr(client, 'show_' + resource_name)
     resource_status = show_resource(resource_id)[resource_name]['status']
     start = int(time.time())
 
-    while resource_status != status:
+    while resource_status not in statuses:
         time.sleep(client.build_interval)
         resource_status = show_resource(resource_id)[
             '{}'.format(resource_name)]['status']
-        if resource_status == 'error' and resource_status != status:
+        if resource_status == 'error' and resource_status not in statuses:
             raise exceptions.VolumeResourceBuildErrorException(
                 resource_name=resource_name, resource_id=resource_id)
         if resource_name == 'volume' and resource_status == 'error_restoring':
@@ -205,7 +208,7 @@ def wait_for_volume_resource_status(client, resource_id, status):
         if int(time.time()) - start >= client.build_timeout:
             message = ('%s %s failed to reach %s status (current %s) '
                        'within the required time (%s s).' %
-                       (resource_name, resource_id, status, resource_status,
+                       (resource_name, resource_id, statuses, resource_status,
                         client.build_timeout))
             raise lib_exc.TimeoutException(message)
 

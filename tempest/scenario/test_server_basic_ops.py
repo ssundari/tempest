@@ -43,6 +43,12 @@ class TestServerBasicOps(manager.ScenarioTest):
      * Terminate the instance
     """
 
+    @classmethod
+    def skip_checks(cls):
+        super(TestServerBasicOps, cls).skip_checks()
+        if not CONF.network_feature_enabled.floating_ips:
+            raise cls.skipException("Floating ips are not available")
+
     def setUp(self):
         super(TestServerBasicOps, self).setUp()
         self.run_ssh = CONF.validation.run_validation
@@ -56,7 +62,8 @@ class TestServerBasicOps(manager.ScenarioTest):
             self.ssh_client = self.get_remote_client(
                 ip_address=self.fip,
                 username=self.ssh_user,
-                private_key=keypair['private_key'])
+                private_key=keypair['private_key'],
+                server=self.instance)
 
     def verify_metadata(self):
         if self.run_ssh and CONF.compute_feature_enabled.metadata_service:

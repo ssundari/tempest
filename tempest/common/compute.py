@@ -25,9 +25,9 @@ from six.moves.urllib import parse as urlparse
 from oslo_log import log as logging
 from oslo_utils import excutils
 
-from tempest.common import fixed_network
 from tempest.common import waiters
 from tempest import config
+from tempest.lib.common import fixed_network
 from tempest.lib.common import rest_client
 from tempest.lib.common.utils import data_utils
 
@@ -39,6 +39,27 @@ else:
 CONF = config.CONF
 
 LOG = logging.getLogger(__name__)
+
+
+def is_scheduler_filter_enabled(filter_name):
+    """Check the list of enabled compute scheduler filters from config.
+
+    This function checks whether the given compute scheduler filter is
+    available and configured in the config file. If the
+    scheduler_available_filters option is set to 'all' (Default value. which
+    means default filters are configured in nova) in tempest.conf then, this
+    function returns True with assumption that requested filter 'filter_name'
+    is one of available filter in nova ("nova.scheduler.filters.all_filters").
+    """
+
+    filters = CONF.compute_feature_enabled.scheduler_available_filters
+    if not filters:
+        return False
+    if 'all' in filters:
+        return True
+    if filter_name in filters:
+        return True
+    return False
 
 
 def create_test_server(clients, validatable=False, validation_resources=None,
@@ -204,6 +225,19 @@ def create_test_server(clients, validatable=False, validation_resources=None,
                         except Exception:
                             LOG.exception('Deleting server %s failed',
                                           server['id'])
+                    for server in servers:
+                        # NOTE(artom) If the servers were booted with volumes
+                        # and with delete_on_termination=False we need to wait
+                        # for the servers to go away before proceeding with
+                        # cleanup, otherwise we'll attempt to delete the
+                        # volumes while they're still attached to servers that
+                        # are in the process of being deleted.
+                        try:
+                            waiters.wait_for_server_termination(
+                                clients.servers_client, server['id'])
+                        except Exception:
+                            LOG.exception('Server %s failed to delete in time',
+                                          server['id'])
 
     return body, servers
 
@@ -252,8 +286,26 @@ class _WebSocket(object):
     def __init__(self, client_socket, url):
         """Contructor for the WebSocket wrapper to the socket."""
         self._socket = client_socket
+        # cached stream for early frames.
+        self.cached_stream = b''
         # Upgrade the HTTP connection to a WebSocket
         self._upgrade(url)
+
+    def _recv(self, recv_size):
+        """Wrapper to receive data from the cached stream or socket."""
+        if recv_size <= 0:
+            return None
+
+        data_from_cached = b''
+        data_from_socket = b''
+        if len(self.cached_stream) > 0:
+            read_from_cached = min(len(self.cached_stream), recv_size)
+            data_from_cached += self.cached_stream[:read_from_cached]
+            self.cached_stream = self.cached_stream[read_from_cached:]
+            recv_size -= read_from_cached
+        if recv_size > 0:
+            data_from_socket = self._socket.recv(recv_size)
+        return data_from_cached + data_from_socket
 
     def receive_frame(self):
         """Wrapper for receiving data to parse the WebSocket frame format"""
@@ -261,7 +313,7 @@ class _WebSocket(object):
         # or no data was received (meaning the socket was closed).  This is
         # done to handle the case where we get back some empty frames
         while True:
-            header = self._socket.recv(2)
+            header = self._recv(2)
             # If we didn't receive any data, just return None
             if not header:
                 return None
@@ -270,7 +322,7 @@ class _WebSocket(object):
             # that only the 2nd byte contains the length, and since the
             # server doesn't do masking, we can just read the data length
             if ord_func(header[1]) & 127 > 0:
-                return self._socket.recv(ord_func(header[1]) & 127)
+                return self._recv(ord_func(header[1]) & 127)
 
     def send_frame(self, data):
         """Wrapper for sending data to add in the WebSocket frame format."""
@@ -318,6 +370,15 @@ class _WebSocket(object):
         self._socket.sendall(reqdata.encode('utf8'))
         self.response = data = self._socket.recv(4096)
         # Loop through & concatenate all of the data in the response body
-        while data and self.response.find(b'\r\n\r\n') < 0:
+        end_loc = self.response.find(b'\r\n\r\n')
+        while data and end_loc < 0:
             data = self._socket.recv(4096)
             self.response += data
+            end_loc = self.response.find(b'\r\n\r\n')
+
+        if len(self.response) > end_loc + 4:
+            # In case some frames (e.g. the first RFP negotiation) have
+            # arrived, cache it for next reading.
+            self.cached_stream = self.response[end_loc + 4:]
+            # ensure response ends with '\r\n\r\n'.
+            self.response = self.response[:end_loc + 4]

@@ -24,7 +24,7 @@ CONF = config.CONF
 LOG = logging.getLogger(__name__)
 
 
-class TestVolumeBootPattern(manager.ScenarioTest):
+class TestVolumeBootPattern(manager.EncryptionScenarioTest):
 
     # Boot from volume scenario is quite slow, and needs extra
     # breathing room to get through deletes in the time allotted.
@@ -68,21 +68,6 @@ class TestVolumeBootPattern(manager.ScenarioTest):
             delete_on_termination=delete_on_termination))
 
         return self.create_server(image_id='', **create_kwargs)
-
-    def _create_snapshot_from_volume(self, vol_id):
-        snap_name = data_utils.rand_name(
-            self.__class__.__name__ + '-snapshot')
-        snap = self.snapshots_client.create_snapshot(
-            volume_id=vol_id,
-            force=True,
-            display_name=snap_name)['snapshot']
-        self.addCleanup(
-            self.snapshots_client.wait_for_resource_deletion, snap['id'])
-        self.addCleanup(self.snapshots_client.delete_snapshot, snap['id'])
-        waiters.wait_for_volume_resource_status(self.snapshots_client,
-                                                snap['id'], 'available')
-        self.assertEqual(snap_name, snap['name'])
-        return snap
 
     def _delete_server(self, server):
         self.servers_client.delete_server(server['id'])
@@ -147,7 +132,7 @@ class TestVolumeBootPattern(manager.ScenarioTest):
 
         # snapshot a volume
         LOG.info("Creating snapshot from volume: %s", volume_origin['id'])
-        snapshot = self._create_snapshot_from_volume(volume_origin['id'])
+        snapshot = self.create_volume_snapshot(volume_origin['id'], force=True)
 
         # create a 3rd instance from snapshot
         LOG.info("Creating third instance from snapshot: %s", snapshot['id'])
@@ -177,7 +162,7 @@ class TestVolumeBootPattern(manager.ScenarioTest):
         boot_volume = self._create_volume_from_image()
 
         # Create a snapshot
-        boot_snapshot = self._create_snapshot_from_volume(boot_volume['id'])
+        boot_snapshot = self.create_volume_snapshot(boot_volume['id'])
 
         # Create a server from a volume snapshot
         server = self._boot_instance_from_resource(
@@ -227,3 +212,25 @@ class TestVolumeBootPattern(manager.ScenarioTest):
 
         # delete instance
         self._delete_server(instance)
+
+    @decorators.idempotent_id('cb78919a-e553-4bab-b73b-10cf4d2eb125')
+    @testtools.skipUnless(CONF.compute_feature_enabled.attach_encrypted_volume,
+                          'Encrypted volume attach is not supported')
+    @test.services('compute', 'volume')
+    def test_boot_server_from_encrypted_volume_luks(self):
+        # Create an encrypted volume
+        volume = self.create_encrypted_volume('nova.volume.encryptors.'
+                                              'luks.LuksEncryptor',
+                                              volume_type='luks')
+
+        self.volumes_client.set_bootable_volume(volume['id'], bootable=True)
+
+        # Boot a server from the encrypted volume
+        server = self._boot_instance_from_resource(
+            source_id=volume['id'],
+            source_type='volume',
+            delete_on_termination=False)
+
+        server_info = self.servers_client.show_server(server['id'])['server']
+        created_volume = server_info['os-extended-volumes:volumes_attached']
+        self.assertEqual(volume['id'], created_volume[0]['id'])

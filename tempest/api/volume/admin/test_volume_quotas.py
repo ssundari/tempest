@@ -36,7 +36,7 @@ class BaseVolumeQuotasAdminTestJSON(base.BaseVolumeAdminTest):
     def setup_credentials(cls):
         super(BaseVolumeQuotasAdminTestJSON, cls).setup_credentials()
         cls.demo_tenant_id = cls.os_primary.credentials.tenant_id
-        cls.alt_client = cls.os_alt.volumes_client
+        cls.alt_client = cls.os_alt.volumes_client_latest
 
     @classmethod
     def setup_clients(cls):
@@ -155,7 +155,7 @@ class BaseVolumeQuotasAdminTestJSON(base.BaseVolumeAdminTest):
 
         # Accepts a volume transfer
         self.alt_transfer_client.accept_volume_transfer(
-            transfer_id, auth_key=auth_key)['transfer']
+            transfer_id, auth_key=auth_key)
 
         # Verify volume transferred is available
         waiters.wait_for_volume_resource_status(

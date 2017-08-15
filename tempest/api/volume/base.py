@@ -69,9 +69,14 @@ class BaseVolumeTest(api_version_utils.BaseMicroversionTest,
         if CONF.service_available.glance:
             cls.images_client = cls.os_primary.image_client_v2
 
+        if cls._api_version == 3:
+            cls.backups_client = cls.os_primary.backups_v3_client
+            cls.volumes_client = cls.os_primary.volumes_v3_client
+        else:
+            cls.backups_client = cls.os_primary.backups_v2_client
+            cls.volumes_client = cls.os_primary.volumes_v2_client
+
         cls.snapshots_client = cls.os_primary.snapshots_v2_client
-        cls.volumes_client = cls.os_primary.volumes_v2_client
-        cls.backups_client = cls.os_primary.backups_v2_client
         cls.volumes_extension_client =\
             cls.os_primary.volumes_v2_extension_client
         cls.availability_zone_client = (
@@ -79,9 +84,8 @@ class BaseVolumeTest(api_version_utils.BaseMicroversionTest,
         cls.volume_limits_client = cls.os_primary.volume_v2_limits_client
         cls.messages_client = cls.os_primary.volume_v3_messages_client
         cls.versions_client = cls.os_primary.volume_v3_versions_client
-
-        if cls._api_version == 3:
-            cls.volumes_client = cls.os_primary.volumes_v3_client
+        cls.groups_client = cls.os_primary.groups_v3_client
+        cls.group_snapshots_client = cls.os_primary.group_snapshots_v3_client
 
     def setUp(self):
         super(BaseVolumeTest, self).setUp()
@@ -217,7 +221,7 @@ class BaseVolumeTest(api_version_utils.BaseMicroversionTest,
                 cls.snapshots_client.wait_for_resource_deletion,
                 snapshot)
 
-    def create_server(self, **kwargs):
+    def create_server(self, wait_until='ACTIVE', **kwargs):
         name = kwargs.pop(
             'name',
             data_utils.rand_name(self.__class__.__name__ + '-instance'))
@@ -227,6 +231,7 @@ class BaseVolumeTest(api_version_utils.BaseMicroversionTest,
             self.os_primary,
             tenant_network=tenant_network,
             name=name,
+            wait_until=wait_until,
             **kwargs)
 
         self.addCleanup(test_utils.call_and_ignore_notfound_exc,
@@ -252,6 +257,8 @@ class BaseVolumeAdminTest(BaseVolumeTest):
         cls.admin_volume_types_client = cls.os_admin.volume_types_v2_client
         cls.admin_volume_manage_client = cls.os_admin.volume_manage_v2_client
         cls.admin_volume_client = cls.os_admin.volumes_v2_client
+        if cls._api_version == 3:
+            cls.admin_volume_client = cls.os_admin.volumes_v3_client
         cls.admin_hosts_client = cls.os_admin.volume_hosts_v2_client
         cls.admin_snapshot_manage_client = \
             cls.os_admin.snapshot_manage_v2_client
@@ -268,9 +275,10 @@ class BaseVolumeAdminTest(BaseVolumeTest):
         cls.admin_scheduler_stats_client = \
             cls.os_admin.volume_scheduler_stats_v2_client
         cls.admin_messages_client = cls.os_admin.volume_v3_messages_client
-
-        if cls._api_version == 3:
-            cls.admin_volume_client = cls.os_admin.volumes_v3_client
+        cls.admin_groups_client = cls.os_admin.groups_v3_client
+        cls.admin_group_snapshots_client = \
+            cls.os_admin.group_snapshots_v3_client
+        cls.admin_group_types_client = cls.os_admin.group_types_v3_client
 
     @classmethod
     def resource_setup(cls):
@@ -303,6 +311,16 @@ class BaseVolumeAdminTest(BaseVolumeTest):
             name=name, **kwargs)['volume_type']
         cls.volume_types.append(volume_type['id'])
         return volume_type
+
+    def create_group_type(self, name=None, **kwargs):
+        """Create a test group-type"""
+        name = name or data_utils.rand_name(
+            self.__class__.__name__ + '-group-type')
+        group_type = self.admin_group_types_client.create_group_type(
+            name=name, **kwargs)['group_type']
+        self.addCleanup(self.admin_group_types_client.delete_group_type,
+                        group_type['id'])
+        return group_type
 
     @classmethod
     def clear_qos_specs(cls):

@@ -64,10 +64,14 @@ class RemoteClient(remote_client.RemoteClient):
                 # Show header line too
                 selected.append(l)
             # lsblk lists disk type in a column right-aligned with TYPE
-            elif pos > 0 and l[pos:pos + 4] == "disk":
+            elif pos is not None and pos > 0 and l[pos:pos + 4] == "disk":
                 selected.append(l)
 
-        return "\n".join(selected)
+        if selected:
+            return "\n".join(selected)
+        else:
+            msg = "'TYPE' column is required but the output doesn't have it: "
+            raise tempest.lib.exceptions.TempestException(msg + output)
 
     def get_boot_time(self):
         cmd = 'cut -f1 -d. /proc/uptime'
@@ -89,11 +93,12 @@ class RemoteClient(remote_client.RemoteClient):
     def get_nic_name_by_mac(self, address):
         cmd = "ip -o link | awk '/%s/ {print $2}'" % address
         nic = self.exec_command(cmd)
-        return nic.strip().strip(":").lower()
+        return nic.strip().strip(":").split('@')[0].lower()
 
     def get_nic_name_by_ip(self, address):
         cmd = "ip -o addr | awk '/%s/ {print $2}'" % address
-        return self._get_nic_name(cmd)
+        nic = self.exec_command(cmd)
+        return nic.strip().strip(":").split('@')[0].lower()
 
     def get_dns_servers(self):
         cmd = 'cat /etc/resolv.conf'

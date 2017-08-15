@@ -103,6 +103,8 @@ class TestMinimumBasicScenario(manager.ScenarioTest):
     @decorators.idempotent_id('bdbb5441-9204-419d-a225-b4fdbfb1a1a8')
     @testtools.skipUnless(CONF.network.public_network_id,
                           'The public_network_id option must be specified.')
+    @testtools.skipUnless(CONF.network_feature_enabled.floating_ips,
+                          'Floating ips are not available')
     @test.services('compute', 'volume', 'image', 'network')
     def test_minimum_basic_scenario(self):
         image = self.glance_image_create()
@@ -139,14 +141,16 @@ class TestMinimumBasicScenario(manager.ScenarioTest):
 
         # check that we can SSH to the server before reboot
         self.linux_client = self.get_remote_client(
-            floating_ip['ip'], private_key=keypair['private_key'])
+            floating_ip['ip'], private_key=keypair['private_key'],
+            server=server)
 
         self.nova_reboot(server)
 
         # check that we can SSH to the server after reboot
         # (both connections are part of the scenario)
         self.linux_client = self.get_remote_client(
-            floating_ip['ip'], private_key=keypair['private_key'])
+            floating_ip['ip'], private_key=keypair['private_key'],
+            server=server)
 
         self.check_disks()
 

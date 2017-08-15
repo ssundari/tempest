@@ -39,6 +39,7 @@ class TokensV3TestJSON(base.BaseIdentityV3AdminTest):
         resp = self.token.auth(user_id=user['id'],
                                password=u_password).response
         subject_token = resp['x-subject-token']
+        self.client.check_token_existence(subject_token)
         # Perform GET Token
         token_details = self.client.show_token(subject_token)['token']
         self.assertEqual(resp['x-subject-token'], subject_token)
@@ -46,7 +47,7 @@ class TokensV3TestJSON(base.BaseIdentityV3AdminTest):
         self.assertEqual(token_details['user']['name'], u_name)
         # Perform Delete Token
         self.client.delete_token(subject_token)
-        self.assertRaises(lib_exc.NotFound, self.client.show_token,
+        self.assertRaises(lib_exc.NotFound, self.client.check_token_existence,
                           subject_token)
 
     @decorators.idempotent_id('565fa210-1da1-4563-999b-f7b5b67cf112')
@@ -145,7 +146,7 @@ class TokensV3TestJSON(base.BaseIdentityV3AdminTest):
 
     @decorators.idempotent_id('08ed85ce-2ba8-4864-b442-bcc61f16ae89')
     def test_get_available_project_scopes(self):
-        manager_project_id = self.manager.credentials.project_id
+        manager_project_id = self.os_primary.credentials.project_id
         admin_user_id = self.os_admin.credentials.user_id
         admin_role_id = self.get_role_by_name(CONF.identity.admin_role)['id']
 

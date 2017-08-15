@@ -22,6 +22,7 @@ from tempest.common import compute
 from tempest.common import waiters
 from tempest import config
 from tempest import exceptions
+from tempest.lib.common import api_version_request
 from tempest.lib.common import api_version_utils
 from tempest.lib.common.utils import data_utils
 from tempest.lib.common.utils import test_utils
@@ -96,8 +97,8 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
         cls.security_group_default_rules_client = (
             cls.os_primary.security_group_default_rules_client)
         cls.versions_client = cls.os_primary.compute_versions_client
-
-        cls.volumes_client = cls.os_primary.volumes_v2_client
+        if CONF.service_available.cinder:
+            cls.volumes_client = cls.os_primary.volumes_client_latest
 
     @classmethod
     def resource_setup(cls):
@@ -202,6 +203,15 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
         """
         if 'name' not in kwargs:
             kwargs['name'] = data_utils.rand_name(cls.__name__ + "-server")
+
+        request_version = api_version_request.APIVersionRequest(
+            cls.request_microversion)
+        v2_37_version = api_version_request.APIVersionRequest('2.37')
+
+        # NOTE(snikitin): since microversion v2.37 'networks' field is required
+        if request_version >= v2_37_version and 'networks' not in kwargs:
+            kwargs['networks'] = 'none'
+
         tenant_network = cls.get_tenant_network()
         body, servers = compute.create_test_server(
             cls.os_primary,
@@ -414,7 +424,7 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
                 LOG.exception('Waiting for deletion of volume %s failed',
                               volume['id'])
 
-    def attach_volume(self, server, volume, device=None):
+    def attach_volume(self, server, volume, device=None, check_reserved=False):
         """Attaches volume to server and waits for 'in-use' volume status.
 
         The volume will be detached when the test tears down.
@@ -423,10 +433,15 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
         :param volume: The volume to attach.
         :param device: Optional mountpoint for the attached volume. Note that
             this is not guaranteed for all hypervisors and is not recommended.
+        :param check_reserved: Consider a status of reserved as valid for
+            completion. This is to handle new Cinder attach where we more
+            accurately use 'reserved' for things like attaching to a shelved
+            server.
         """
         attach_kwargs = dict(volumeId=volume['id'])
         if device:
             attach_kwargs['device'] = device
+
         attachment = self.servers_client.attach_volume(
             server['id'], **attach_kwargs)['volumeAttachment']
         # On teardown detach the volume and wait for it to be available. This
@@ -439,8 +454,11 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
         self.addCleanup(test_utils.call_and_ignore_notfound_exc,
                         self.servers_client.detach_volume,
                         server['id'], volume['id'])
+        statuses = ['in-use']
+        if check_reserved:
+            statuses.append('reserved')
         waiters.wait_for_volume_resource_status(self.volumes_client,
-                                                volume['id'], 'in-use')
+                                                volume['id'], statuses)
         return attachment
 
 
@@ -469,3 +487,21 @@ class BaseV2ComputeAdminTest(BaseV2ComputeTest):
         self.addCleanup(client.wait_for_resource_deletion, flavor['id'])
         self.addCleanup(client.delete_flavor, flavor['id'])
         return flavor
+
+    def get_host_for_server(self, server_id):
+        server_details = self.admin_servers_client.show_server(server_id)
+        return server_details['server']['OS-EXT-SRV-ATTR:host']
+
+    def get_host_other_than(self, server_id):
+        source_host = self.get_host_for_server(server_id)
+
+        list_hosts_resp = self.os_admin.hosts_client.list_hosts()['hosts']
+        hosts = [
+            host_record['host_name']
+            for host_record in list_hosts_resp
+            if host_record['service'] == 'compute'
+        ]
+
+        for target_host in hosts:
+            if source_host != target_host:
+                return target_host

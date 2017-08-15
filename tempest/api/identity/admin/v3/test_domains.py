@@ -57,7 +57,7 @@ class DomainsTestJSON(base.BaseIdentityV3AdminTest):
             fetched_ids.append(d['id'])
         missing_doms = [d for d in self.setup_domains
                         if d['id'] not in fetched_ids]
-        self.assertEqual(0, len(missing_doms))
+        self.assertEmpty(missing_doms)
 
     @decorators.idempotent_id('c6aee07b-4981-440c-bb0b-eb598f58ffe9')
     def test_list_domains_filter_by_name(self):
@@ -93,7 +93,6 @@ class DomainsTestJSON(base.BaseIdentityV3AdminTest):
             name=d_name, description=d_desc)['domain']
         self.addCleanup(test_utils.call_and_ignore_notfound_exc,
                         self._delete_domain, domain['id'])
-        self.assertIn('id', domain)
         self.assertIn('description', domain)
         self.assertIn('name', domain)
         self.assertIn('enabled', domain)
@@ -147,7 +146,6 @@ class DomainsTestJSON(base.BaseIdentityV3AdminTest):
         d_name = data_utils.rand_name('domain')
         domain = self.domains_client.create_domain(name=d_name)['domain']
         self.addCleanup(self._delete_domain, domain['id'])
-        self.assertIn('id', domain)
         expected_data = {'name': d_name, 'enabled': True}
         self.assertEqual('', domain['description'])
         self.assertDictContainsSubset(expected_data, domain)

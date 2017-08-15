@@ -74,7 +74,7 @@ class MeteringTestJSON(base.BaseAdminNetworkTest):
         # Asserting that the label is not found in list after deletion
         labels = self.admin_metering_labels_client.list_metering_labels(
             id=metering_label_id)
-        self.assertEqual(len(labels['metering_labels']), 0)
+        self.assertEmpty(labels['metering_labels'])
 
     def _delete_metering_label_rule(self, metering_label_rule_id):
         client = self.admin_metering_label_rules_client
@@ -89,7 +89,7 @@ class MeteringTestJSON(base.BaseAdminNetworkTest):
         # Verify label filtering
         body = self.admin_metering_labels_client.list_metering_labels(id=33)
         metering_labels = body['metering_labels']
-        self.assertEqual(0, len(metering_labels))
+        self.assertEmpty(metering_labels)
 
     @decorators.idempotent_id('ec8e15ff-95d0-433b-b8a6-b466bddb1e50')
     def test_create_delete_metering_label_with_filters(self):
@@ -126,7 +126,7 @@ class MeteringTestJSON(base.BaseAdminNetworkTest):
         # Verify rule filtering
         body = client.list_metering_label_rules(id=33)
         metering_label_rules = body['metering_label_rules']
-        self.assertEqual(0, len(metering_label_rules))
+        self.assertEmpty(metering_label_rules)
 
     @decorators.idempotent_id('f4d547cd-3aee-408f-bf36-454f8825e045')
     def test_create_delete_metering_label_rule_with_filters(self):

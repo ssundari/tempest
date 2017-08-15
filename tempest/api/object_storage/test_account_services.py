@@ -101,7 +101,7 @@ class AccountTest(base.BaseObjectTest):
         # Check only the format of common headers with custom matcher
         self.assertThat(resp, custom_matchers.AreAllWellFormatted())
 
-        self.assertEqual(len(container_list), 0)
+        self.assertEmpty(container_list)
 
     @decorators.idempotent_id('1c7efa35-e8a2-4b0b-b5ff-862c7fd83704')
     def test_list_containers_with_format_json(self):
@@ -135,7 +135,7 @@ class AccountTest(base.BaseObjectTest):
         not CONF.object_storage_feature_enabled.discoverability,
         'Discoverability function is disabled')
     def test_list_extensions(self):
-        resp, extensions = self.capabilities_client.list_capabilities()
+        resp = self.capabilities_client.list_capabilities()
 
         self.assertThat(resp, custom_matchers.AreAllWellFormatted())
 
@@ -162,7 +162,7 @@ class AccountTest(base.BaseObjectTest):
             self.account_client.list_account_containers(params=params)
         self.assertHeaders(resp, 'Account', 'GET')
 
-        self.assertEqual(len(container_list), 0)
+        self.assertEmpty(container_list)
 
         params = {'marker': self.containers[self.containers_count // 2]}
         resp, container_list = \
@@ -182,7 +182,7 @@ class AccountTest(base.BaseObjectTest):
         resp, container_list = \
             self.account_client.list_account_containers(params=params)
         self.assertHeaders(resp, 'Account', 'GET')
-        self.assertEqual(len(container_list), 0)
+        self.assertEmpty(container_list)
 
         params = {'end_marker': self.containers[self.containers_count // 2]}
         resp, container_list = \
@@ -297,7 +297,7 @@ class AccountTest(base.BaseObjectTest):
             create_update_metadata=metadata)
         self.assertHeaders(resp, 'Account', 'POST')
 
-        resp, body = self.account_client.list_account_metadata()
+        resp, _ = self.account_client.list_account_metadata()
         self.assertIn('x-account-meta-test-account-meta1', resp)
         self.assertEqual(resp['x-account-meta-test-account-meta1'],
                          metadata['test-account-meta1'])
@@ -352,7 +352,7 @@ class AccountTest(base.BaseObjectTest):
         self.account_client.create_update_or_delete_account_metadata(
             create_update_metadata=metadata_1)
         metadata_2 = {'test-account-meta2': 'Meta2'}
-        resp, body = (
+        resp, _ = (
             self.account_client.create_update_or_delete_account_metadata(
                 create_update_metadata=metadata_2,
                 delete_metadata=metadata_1))

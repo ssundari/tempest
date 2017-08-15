@@ -124,7 +124,12 @@ class SnapshotsClient(rest_client.RestClient):
         return rest_client.ResponseBody(resp, body)
 
     def create_snapshot_metadata(self, snapshot_id, metadata):
-        """Create metadata for the snapshot."""
+        """Create metadata for the snapshot.
+
+        For a full list of available parameters, please refer to the official
+        API reference:
+        http://developer.openstack.org/api-ref/block-storage/v2/#create-snapshot-metadata
+        """
         put_body = json.dumps({'metadata': metadata})
         url = "snapshots/%s/metadata" % snapshot_id
         resp, body = self.post(url, put_body)
@@ -155,6 +160,14 @@ class SnapshotsClient(rest_client.RestClient):
         put_body = json.dumps(kwargs)
         url = "snapshots/%s/metadata" % snapshot_id
         resp, body = self.put(url, put_body)
+        body = json.loads(body)
+        self.expected_success(200, resp.status)
+        return rest_client.ResponseBody(resp, body)
+
+    def show_snapshot_metadata_item(self, snapshot_id, id):
+        """Show metadata item for the snapshot."""
+        url = "snapshots/%s/metadata/%s" % (snapshot_id, id)
+        resp, body = self.get(url)
         body = json.loads(body)
         self.expected_success(200, resp.status)
         return rest_client.ResponseBody(resp, body)
