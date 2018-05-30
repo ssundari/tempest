@@ -35,6 +35,9 @@ class SnapshotManageAdminTest(base.BaseVolumeAdminTest):
     def skip_checks(cls):
         super(SnapshotManageAdminTest, cls).skip_checks()
 
+        if not CONF.volume_feature_enabled.snapshot:
+            raise cls.skipException("Cinder volume snapshots are disabled")
+
         if not CONF.volume_feature_enabled.manage_snapshot:
             raise cls.skipException("Manage snapshot tests are disabled")
 
@@ -60,7 +63,7 @@ class SnapshotManageAdminTest(base.BaseVolumeAdminTest):
         # Verify the original snapshot does not exist in snapshot list
         params = {'all_tenants': 1}
         all_snapshots = self.admin_snapshots_client.list_snapshots(
-            detail=True, params=params)['snapshots']
+            detail=True, **params)['snapshots']
         self.assertNotIn(snapshot['id'], [v['id'] for v in all_snapshots])
 
         # Manage the snapshot

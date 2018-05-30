@@ -49,7 +49,7 @@ on config::
               public_network_id=CONF.network.public_network_id,
               create_networks=(CONF.auth.create_isolated_networks and not
                                CONF.network.shared_physical_network),
-              resource_prefix=CONF.resources_prefix,
+              resource_prefix='tempest',
               credentials_domain=CONF.auth.default_credentials_domain_name,
               admin_role=CONF.identity.admin_role,
               identity_uri=CONF.identity.uri_v3,
@@ -130,19 +130,18 @@ this by leveraging the ``force_new`` kwarg::
   # role
   provider.clear_creds()
 
-API Reference
-=============
 
-------------------------------
+API Reference
+-------------
+
 The dynamic credentials module
-------------------------------
+''''''''''''''''''''''''''''''
 
 .. automodule:: tempest.lib.common.dynamic_creds
    :members:
 
---------------------------------------
 The pre-provisioned credentials module
---------------------------------------
+''''''''''''''''''''''''''''''''''''''
 
 .. automodule:: tempest.lib.common.preprov_creds
    :members:

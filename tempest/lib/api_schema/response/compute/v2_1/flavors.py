@@ -86,7 +86,7 @@ unset_flavor_extra_specs = {
     'status_code': [200]
 }
 
-create_get_flavor_details = {
+create_update_get_flavor_details = {
     'status_code': [200],
     'response_body': {
         'type': 'object',

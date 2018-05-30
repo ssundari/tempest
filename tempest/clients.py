@@ -17,15 +17,12 @@ from tempest import config
 from tempest.lib import auth
 from tempest.lib import exceptions as lib_exc
 from tempest.lib.services import clients
-from tempest.services import object_storage
 
 CONF = config.CONF
 
 
 class Manager(clients.ServiceClients):
     """Top level manager for OpenStack tempest clients"""
-
-    default_params = config.service_client_config()
 
     def __init__(self, credentials, scope='project'):
         """Initialization of Manager class.
@@ -47,6 +44,10 @@ class Manager(clients.ServiceClients):
         self._set_object_storage_clients()
         self._set_image_clients()
         self._set_network_clients()
+        # TODO(andreaf) This is maintained for backward compatibility
+        # with plugins, but it should removed eventually, since it was
+        # never a stable interface and it's not useful anyways
+        self.default_params = config.service_client_config()
 
     def _set_network_clients(self):
         self.network_agents_client = self.network.AgentsClient()
@@ -196,6 +197,10 @@ class Manager(clients.ServiceClients):
         self.endpoint_groups_client = self.identity_v3.EndPointGroupsClient(
             **params_v3)
         self.catalog_client = self.identity_v3.CatalogClient(**params_v3)
+        self.project_tags_client = self.identity_v3.ProjectTagsClient(
+            **params_v3)
+        self.application_credentials_client = \
+            self.identity_v3.ApplicationCredentialsClient(**params_v3)
 
         # Token clients do not use the catalog. They only need default_params.
         # They read auth_url, so they should only be set if the corresponding
@@ -233,7 +238,9 @@ class Manager(clients.ServiceClients):
             self.volumes_client = self.volume_v1.VolumesClient()
             self.volumes_extension_client = self.volume_v1.ExtensionsClient()
 
-        if CONF.volume_feature_enabled.api_v2:
+        # if only api_v3 is enabled, all these clients should be available
+        if (CONF.volume_feature_enabled.api_v2 or
+            CONF.volume_feature_enabled.api_v3):
             self.backups_v2_client = self.volume_v2.BackupsClient()
             self.encryption_types_v2_client = \
                 self.volume_v2.EncryptionTypesClient()
@@ -264,6 +271,7 @@ class Manager(clients.ServiceClients):
             # Set default client for users that don't need explicit version
             self.volumes_client_latest = self.volumes_v2_client
             self.snapshots_client_latest = self.snapshots_v2_client
+            self.backups_client_latest = self.backups_v2_client
 
         if CONF.volume_feature_enabled.api_v3:
             self.backups_v3_client = self.volume_v3.BackupsClient()
@@ -279,23 +287,14 @@ class Manager(clients.ServiceClients):
             # Set default client for users that don't need explicit version
             self.volumes_client_latest = self.volumes_v3_client
             self.snapshots_client_latest = self.snapshots_v3_client
+            self.backups_client_latest = self.backups_v3_client
 
     def _set_object_storage_clients(self):
-        # NOTE(andreaf) Load configuration from config. Once object storage
-        # is in lib, configuration will be pulled directly from the registry
-        # and this will not be required anymore.
-        params = config.service_client_config('object-storage')
-
-        self.account_client = object_storage.AccountClient(self.auth_provider,
-                                                           **params)
-        self.bulk_client = object_storage.BulkMiddlewareClient(
-            self.auth_provider, **params)
-        self.capabilities_client = object_storage.CapabilitiesClient(
-            self.auth_provider, **params)
-        self.container_client = object_storage.ContainerClient(
-            self.auth_provider, **params)
-        self.object_client = object_storage.ObjectClient(self.auth_provider,
-                                                         **params)
+        self.account_client = self.object_storage.AccountClient()
+        self.bulk_client = self.object_storage.BulkMiddlewareClient()
+        self.capabilities_client = self.object_storage.CapabilitiesClient()
+        self.container_client = self.object_storage.ContainerClient()
+        self.object_client = self.object_storage.ObjectClient()
 
 
 def get_auth_provider_class(credentials):

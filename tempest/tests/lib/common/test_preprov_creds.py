@@ -32,6 +32,7 @@ from tempest.lib import exceptions as lib_exc
 from tempest.tests import base
 from tempest.tests import fake_config
 from tempest.tests.lib import fake_identity
+from tempest.tests.lib.services import registry_fixture
 
 
 class TestPreProvisionedCredentials(base.TestCase):
@@ -92,9 +93,8 @@ class TestPreProvisionedCredentials(base.TestCase):
             return_value=self.test_accounts))
         self.useFixture(fixtures.MockPatch(
             'os.path.isfile', return_value=True))
-        # NOTE(andreaf) Ensure config is loaded so service clients are
-        # registered in the registry before tests
-        config.service_client_config()
+        # Make sure we leave the registry clean
+        self.useFixture(registry_fixture.RegistryFixture())
 
     def tearDown(self):
         super(TestPreProvisionedCredentials, self).tearDown()
@@ -339,7 +339,7 @@ class TestPreProvisionedCredentials(base.TestCase):
             return_value=test_accounts))
         test_accounts_class = preprov_creds.PreProvisionedCredentialProvider(
             **self.fixed_params)
-        with mock.patch('tempest.lib.services.compute.networks_client.'
+        with mock.patch('tempest.lib.services.network.networks_client.'
                         'NetworksClient.list_networks',
                         return_value={'networks': [{'name': 'network-2',
                                                     'id': 'fake-id',

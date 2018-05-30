@@ -16,11 +16,12 @@
 
 from oslo_log import log as logging
 
+from tempest import clients
 from tempest.common import credentials_factory as credentials
 from tempest.common import identity
+from tempest.common import utils
 from tempest.common.utils import net_info
 from tempest import config
-from tempest import test
 
 LOG = logging.getLogger(__name__)
 CONF = config.CONF
@@ -31,12 +32,11 @@ CONF_NETWORKS = []
 CONF_PRIV_NETWORK_NAME = None
 CONF_PUB_NETWORK = None
 CONF_PUB_ROUTER = None
-CONF_TENANTS = None
+CONF_PROJECTS = None
 CONF_USERS = None
 
 IS_CINDER = None
 IS_GLANCE = None
-IS_HEAT = None
 IS_NEUTRON = None
 IS_NOVA = None
 
@@ -49,7 +49,7 @@ def init_conf():
     global CONF_PRIV_NETWORK_NAME
     global CONF_PUB_NETWORK
     global CONF_PUB_ROUTER
-    global CONF_TENANTS
+    global CONF_PROJECTS
     global CONF_USERS
     global IS_CINDER
     global IS_GLANCE
@@ -59,7 +59,6 @@ def init_conf():
 
     IS_CINDER = CONF.service_available.cinder
     IS_GLANCE = CONF.service_available.glance
-    IS_HEAT = CONF.service_available.heat
     IS_NEUTRON = CONF.service_available.neutron
     IS_NOVA = CONF.service_available.nova
 
@@ -68,7 +67,7 @@ def init_conf():
     CONF_PRIV_NETWORK_NAME = CONF.compute.fixed_network_name
     CONF_PUB_NETWORK = CONF.network.public_network_id
     CONF_PUB_ROUTER = CONF.network.public_router_id
-    CONF_TENANTS = [CONF.auth.admin_project_name]
+    CONF_PROJECTS = [CONF.auth.admin_project_name]
     CONF_USERS = [CONF.auth.admin_username]
 
     if IS_NEUTRON:
@@ -78,16 +77,17 @@ def init_conf():
 
 
 def _get_network_id(net_name, project_name):
-    am = credentials.AdminManager()
+    am = clients.Manager(
+        credentials.get_configured_admin_credentials())
     net_cl = am.networks_client
-    tn_cl = am.tenants_client
+    pr_cl = am.projects_client
 
     networks = net_cl.list_networks()
-    tenant = identity.get_tenant_by_name(tn_cl, project_name)
-    t_id = tenant['id']
+    project = identity.get_project_by_name(pr_cl, project_name)
+    p_id = project['id']
     n_id = None
     for net in networks['networks']:
-        if (net['tenant_id'] == t_id and net['name'] == net_name):
+        if (net['project_id'] == p_id and net['name'] == net_name):
             n_id = net['id']
             break
     return n_id
@@ -104,11 +104,11 @@ class BaseService(object):
             self.tenant_filter['tenant_id'] = self.tenant_id
 
     def _filter_by_tenant_id(self, item_list):
-        if (item_list is None
-                or not item_list
-                or not hasattr(self, 'tenant_id')
-                or self.tenant_id is None
-                or 'tenant_id' not in item_list[0]):
+        if (item_list is None or
+                not item_list or
+                not hasattr(self, 'tenant_id') or
+                self.tenant_id is None or
+                'tenant_id' not in item_list[0]):
             return item_list
 
         return [item for item in item_list
@@ -139,7 +139,7 @@ class SnapshotService(BaseService):
 
     def __init__(self, manager, **kwargs):
         super(SnapshotService, self).__init__(kwargs)
-        self.client = manager.snapshots_client
+        self.client = manager.snapshots_client_latest
 
     def list(self):
         client = self.client
@@ -208,33 +208,6 @@ class ServerGroupService(ServerService):
     def dry_run(self):
         sgs = self.list()
         self.data['server_groups'] = sgs
-
-
-class StackService(BaseService):
-    def __init__(self, manager, **kwargs):
-        super(StackService, self).__init__(kwargs)
-        params = config.service_client_config('orchestration')
-        self.client = manager.orchestration.OrchestrationClient(
-            manager.auth_provider, **params)
-
-    def list(self):
-        client = self.client
-        stacks = client.list_stacks()['stacks']
-        LOG.debug("List count, %s Stacks", len(stacks))
-        return stacks
-
-    def delete(self):
-        client = self.client
-        stacks = self.list()
-        for stack in stacks:
-            try:
-                client.delete_stack(stack['id'])
-            except Exception:
-                LOG.exception("Delete Stack exception.")
-
-    def dry_run(self):
-        stacks = self.list()
-        self.data['stacks'] = stacks
 
 
 class KeyPairService(BaseService):
@@ -317,7 +290,7 @@ class FloatingIpService(BaseService):
 class VolumeService(BaseService):
     def __init__(self, manager, **kwargs):
         super(VolumeService, self).__init__(kwargs)
-        self.client = manager.volumes_client
+        self.client = manager.volumes_client_latest
 
     def list(self):
         client = self.client
@@ -342,7 +315,7 @@ class VolumeService(BaseService):
 class VolumeQuotaService(BaseService):
     def __init__(self, manager, **kwargs):
         super(VolumeQuotaService, self).__init__(kwargs)
-        self.client = manager.volume_quotas_client
+        self.client = manager.volume_quotas_v2_client
 
     def delete(self):
         client = self.client
@@ -784,14 +757,14 @@ class ImageService(BaseService):
 class IdentityService(BaseService):
     def __init__(self, manager, **kwargs):
         super(IdentityService, self).__init__(kwargs)
-        self.client = manager.identity_client
+        self.client = manager.identity_v3_client
 
 
 class UserService(BaseService):
 
     def __init__(self, manager, **kwargs):
         super(UserService, self).__init__(kwargs)
-        self.client = manager.users_client
+        self.client = manager.users_v3_client
 
     def list(self):
         users = self.client.list_users()['users']
@@ -843,8 +816,8 @@ class RoleService(BaseService):
             if not self.is_save_state:
                 roles = [role for role in roles if
                          (role['id'] not in
-                          self.saved_state_json['roles'].keys()
-                          and role['name'] != CONF.identity.admin_role)]
+                          self.saved_state_json['roles'].keys() and
+                          role['name'] != CONF.identity.admin_role)]
                 LOG.debug("List count, %s Roles after reconcile", len(roles))
             return roles
         except Exception:
@@ -870,43 +843,46 @@ class RoleService(BaseService):
             self.data['roles'][role['id']] = role['name']
 
 
-class TenantService(BaseService):
+class ProjectService(BaseService):
 
     def __init__(self, manager, **kwargs):
-        super(TenantService, self).__init__(kwargs)
-        self.client = manager.tenants_client
+        super(ProjectService, self).__init__(kwargs)
+        self.client = manager.projects_client
 
     def list(self):
-        tenants = self.client.list_tenants()['tenants']
+        projects = self.client.list_projects()['projects']
         if not self.is_save_state:
-            tenants = [tenant for tenant in tenants if (tenant['id']
-                       not in self.saved_state_json['tenants'].keys()
-                       and tenant['name'] != CONF.auth.admin_project_name)]
+            project_ids = self.saved_state_json['projects']
+            projects = [project
+                        for project in projects
+                        if (project['id'] not in project_ids and
+                            project['name'] != CONF.auth.admin_project_name)]
 
         if self.is_preserve:
-            tenants = [tenant for tenant in tenants if tenant['name']
-                       not in CONF_TENANTS]
+            projects = [project
+                        for project in projects
+                        if project['name'] not in CONF_PROJECTS]
 
-        LOG.debug("List count, %s Tenants after reconcile", len(tenants))
-        return tenants
+        LOG.debug("List count, %s Projects after reconcile", len(projects))
+        return projects
 
     def delete(self):
-        tenants = self.list()
-        for tenant in tenants:
+        projects = self.list()
+        for project in projects:
             try:
-                self.client.delete_tenant(tenant['id'])
+                self.client.delete_project(project['id'])
             except Exception:
-                LOG.exception("Delete Tenant exception.")
+                LOG.exception("Delete project exception.")
 
     def dry_run(self):
-        tenants = self.list()
-        self.data['tenants'] = tenants
+        projects = self.list()
+        self.data['projects'] = projects
 
     def save_state(self):
-        tenants = self.list()
-        self.data['tenants'] = {}
-        for tenant in tenants:
-            self.data['tenants'][tenant['id']] = tenant['name']
+        projects = self.list()
+        self.data['projects'] = {}
+        for project in projects:
+            self.data['projects'][project['id']] = project['name']
 
 
 class DomainService(BaseService):
@@ -946,35 +922,33 @@ class DomainService(BaseService):
             self.data['domains'][domain['id']] = domain['name']
 
 
-def get_tenant_cleanup_services():
-    tenant_services = []
+def get_project_cleanup_services():
+    project_services = []
     # TODO(gmann): Tempest should provide some plugin hook for cleanup
     # script extension to plugin tests also.
     if IS_NOVA:
-        tenant_services.append(ServerService)
-        tenant_services.append(KeyPairService)
-        tenant_services.append(SecurityGroupService)
-        tenant_services.append(ServerGroupService)
+        project_services.append(ServerService)
+        project_services.append(KeyPairService)
+        project_services.append(SecurityGroupService)
+        project_services.append(ServerGroupService)
         if not IS_NEUTRON:
-            tenant_services.append(FloatingIpService)
-        tenant_services.append(NovaQuotaService)
-    if IS_HEAT:
-        tenant_services.append(StackService)
+            project_services.append(FloatingIpService)
+        project_services.append(NovaQuotaService)
     if IS_NEUTRON:
-        tenant_services.append(NetworkFloatingIpService)
-        if test.is_extension_enabled('metering', 'network'):
-            tenant_services.append(NetworkMeteringLabelRuleService)
-            tenant_services.append(NetworkMeteringLabelService)
-        tenant_services.append(NetworkRouterService)
-        tenant_services.append(NetworkPortService)
-        tenant_services.append(NetworkSubnetService)
-        tenant_services.append(NetworkService)
-        tenant_services.append(NetworkSecGroupService)
+        project_services.append(NetworkFloatingIpService)
+        if utils.is_extension_enabled('metering', 'network'):
+            project_services.append(NetworkMeteringLabelRuleService)
+            project_services.append(NetworkMeteringLabelService)
+        project_services.append(NetworkRouterService)
+        project_services.append(NetworkPortService)
+        project_services.append(NetworkSubnetService)
+        project_services.append(NetworkService)
+        project_services.append(NetworkSecGroupService)
     if IS_CINDER:
-        tenant_services.append(SnapshotService)
-        tenant_services.append(VolumeService)
-        tenant_services.append(VolumeQuotaService)
-    return tenant_services
+        project_services.append(SnapshotService)
+        project_services.append(VolumeService)
+        project_services.append(VolumeQuotaService)
+    return project_services
 
 
 def get_global_cleanup_services():
@@ -984,7 +958,7 @@ def get_global_cleanup_services():
     if IS_GLANCE:
         global_services.append(ImageService)
     global_services.append(UserService)
-    global_services.append(TenantService)
+    global_services.append(ProjectService)
     global_services.append(DomainService)
     global_services.append(RoleService)
     return global_services

@@ -13,16 +13,19 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import ipaddress
+
 import netaddr
+import six
 import testtools
 
 from tempest.api.network import base_security_groups as sec_base
 from tempest.common import custom_matchers
+from tempest.common import utils
 from tempest import config
 from tempest.lib.common.utils import data_utils
 from tempest.lib import decorators
 from tempest.lib import exceptions
-from tempest import test
 
 CONF = config.CONF
 
@@ -84,25 +87,13 @@ class PortsTestJSON(sec_base.BaseSecGroupTest):
         self.assertTrue(port1['admin_state_up'])
         self.assertTrue(port2['admin_state_up'])
 
-    @classmethod
-    def _get_ipaddress_from_tempest_conf(cls):
-        """Return subnet with mask bits for configured CIDR """
-        if cls._ip_version == 4:
-            cidr = netaddr.IPNetwork(CONF.network.project_network_cidr)
-            cidr.prefixlen = CONF.network.project_network_mask_bits
-
-        elif cls._ip_version == 6:
-            cidr = netaddr.IPNetwork(CONF.network.project_network_v6_cidr)
-            cidr.prefixlen = CONF.network.project_network_v6_mask_bits
-
-        return cidr
-
     @decorators.attr(type='smoke')
     @decorators.idempotent_id('0435f278-40ae-48cb-a404-b8a087bc09b1')
     def test_create_port_in_allowed_allocation_pools(self):
         network = self.create_network()
         net_id = network['id']
-        address = self._get_ipaddress_from_tempest_conf()
+        address = self.cidr
+        address.prefixlen = self.mask_bits
         if ((address.version == 4 and address.prefixlen >= 30) or
            (address.version == 6 and address.prefixlen >= 126)):
             msg = ("Subnet %s isn't large enough for the test" % address.cidr)
@@ -189,6 +180,83 @@ class PortsTestJSON(sec_base.BaseSecGroupTest):
         self.assertIn(port_1['port']['id'], port_ids)
         self.assertIn(port_1_fixed_ip, port_ips)
         self.assertIn(network['id'], port_net_ids)
+
+    @decorators.idempotent_id('79895408-85d5-460d-94e7-9531c5fd9123')
+    @testtools.skipUnless(
+        utils.is_extension_enabled('ip-substring-filtering', 'network'),
+        'ip-substring-filtering extension not enabled.')
+    def test_port_list_filter_by_ip_substr(self):
+        # Create network and subnet
+        network = self.create_network()
+        subnet = self.create_subnet(network)
+        self.addCleanup(self.subnets_client.delete_subnet, subnet['id'])
+
+        # Get two IP addresses
+        ip_address_1 = None
+        ip_address_2 = None
+        ip_network = ipaddress.ip_network(six.text_type(subnet['cidr']))
+        for ip in ip_network:
+            if ip == ip_network.network_address:
+                continue
+            if ip_address_1 is None:
+                ip_address_1 = six.text_type(ip)
+            else:
+                ip_address_2 = ip_address_1
+                ip_address_1 = six.text_type(ip)
+                # Make sure these two IP addresses have different substring
+                if ip_address_1[:-1] != ip_address_2[:-1]:
+                    break
+
+        # Create two ports
+        fixed_ips = [{'subnet_id': subnet['id'], 'ip_address': ip_address_1}]
+        port_1 = self.ports_client.create_port(network_id=network['id'],
+                                               fixed_ips=fixed_ips)
+        self.addCleanup(self.ports_client.delete_port, port_1['port']['id'])
+        fixed_ips = [{'subnet_id': subnet['id'], 'ip_address': ip_address_2}]
+        port_2 = self.ports_client.create_port(network_id=network['id'],
+                                               fixed_ips=fixed_ips)
+        self.addCleanup(self.ports_client.delete_port, port_2['port']['id'])
+
+        # Scenario 1: List port1 (port2 is filtered out)
+        if ip_address_1[:-1] != ip_address_2[:-1]:
+            ips_filter = 'ip_address_substr=' + ip_address_1[:-1]
+        else:
+            ips_filter = 'ip_address_substr=' + ip_address_1
+        ports = self.ports_client.list_ports(fixed_ips=ips_filter)['ports']
+        # Check that we got the desired port
+        port_ids = [port['id'] for port in ports]
+        fixed_ips = [port['fixed_ips'] for port in ports]
+        port_ips = []
+        for addr in fixed_ips:
+            port_ips.extend([a['ip_address'] for a in addr])
+
+        port_net_ids = [port['network_id'] for port in ports]
+        self.assertIn(network['id'], port_net_ids)
+        self.assertIn(port_1['port']['id'], port_ids)
+        self.assertIn(port_1['port']['fixed_ips'][0]['ip_address'], port_ips)
+        self.assertNotIn(port_2['port']['id'], port_ids)
+        self.assertNotIn(
+            port_2['port']['fixed_ips'][0]['ip_address'], port_ips)
+
+        # Scenario 2: List both port1 and port2
+        substr = ip_address_1
+        while substr not in ip_address_2:
+            substr = substr[:-1]
+        ips_filter = 'ip_address_substr=' + substr
+        ports = self.ports_client.list_ports(fixed_ips=ips_filter)['ports']
+        # Check that we got both port
+        port_ids = [port['id'] for port in ports]
+        fixed_ips = [port['fixed_ips'] for port in ports]
+        port_ips = []
+        for addr in fixed_ips:
+            port_ips.extend([a['ip_address'] for a in addr])
+
+        port_net_ids = [port['network_id'] for port in ports]
+        self.assertIn(network['id'], port_net_ids)
+        self.assertIn(port_1['port']['id'], port_ids)
+        self.assertIn(port_1['port']['fixed_ips'][0]['ip_address'], port_ips)
+        self.assertIn(port_2['port']['id'], port_ids)
+        self.assertIn(port_2['port']['fixed_ips'][0]['ip_address'], port_ips)
 
     @decorators.idempotent_id('5ad01ed0-0e6e-4c5d-8194-232801b15c72')
     def test_port_list_filter_by_router_id(self):
@@ -307,7 +375,7 @@ class PortsTestJSON(sec_base.BaseSecGroupTest):
 
     @decorators.idempotent_id('58091b66-4ff4-4cc1-a549-05d60c7acd1a')
     @testtools.skipUnless(
-        test.is_extension_enabled('security-group', 'network'),
+        utils.is_extension_enabled('security-group', 'network'),
         'security-group extension not enabled.')
     def test_update_port_with_security_group_and_extra_attributes(self):
         self._update_port_with_security_groups(
@@ -315,7 +383,7 @@ class PortsTestJSON(sec_base.BaseSecGroupTest):
 
     @decorators.idempotent_id('edf6766d-3d40-4621-bc6e-2521a44c257d')
     @testtools.skipUnless(
-        test.is_extension_enabled('security-group', 'network'),
+        utils.is_extension_enabled('security-group', 'network'),
         'security-group extension not enabled.')
     def test_update_port_with_two_security_groups_and_extra_attributes(self):
         self._update_port_with_security_groups(
@@ -342,7 +410,7 @@ class PortsTestJSON(sec_base.BaseSecGroupTest):
     @decorators.attr(type='smoke')
     @decorators.idempotent_id('4179dcb9-1382-4ced-84fe-1b91c54f5735')
     @testtools.skipUnless(
-        test.is_extension_enabled('security-group', 'network'),
+        utils.is_extension_enabled('security-group', 'network'),
         'security-group extension not enabled.')
     def test_create_port_with_no_securitygroups(self):
         network = self.create_network()

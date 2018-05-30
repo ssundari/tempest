@@ -2,7 +2,7 @@ Reviewing Tempest Code
 ======================
 
 To start read the `OpenStack Common Review Checklist
-<http://docs.openstack.org/infra/manual/developers.html#peer-review>`_
+<https://docs.openstack.org/infra/manual/developers.html#peer-review>`_
 
 
 Ensuring code is executed
@@ -16,7 +16,7 @@ not be accepted.
 If a new test is added that depends on a new config option (like a feature
 flag), the commit message must reference a change in DevStack or DevStack-Gate
 that enables the execution of this newly introduced test. This reference could
-either be a `Cross-Repository Dependency <http://docs.openstack.org/infra/
+either be a `Cross-Repository Dependency <https://docs.openstack.org/infra/
 manual/developers.html#cross-repository-dependencies>`_ or a simple link
 to a Gerrit review.
 
@@ -42,8 +42,8 @@ be self verifying by running them in the gate.
 
 API Stability
 -------------
-Tests should only be added for a published stable APIs. If a patch contains
-tests for an API which hasn't been marked as stable or for an API that which
+Tests should only be added for published stable APIs. If a patch contains
+tests for an API which hasn't been marked as stable or for an API which
 doesn't conform to the `API stability guidelines
 <https://wiki.openstack.org/wiki/Governance/Approved/APIStability>`_ then it
 should not be approved.
@@ -121,8 +121,8 @@ fix it. When it will happen, we will deal with it on a case-by-case basis.
 
 When to approve
 ---------------
- * Every patch needs two +2s before being approved.
- * Its ok to hold off on an approval until a subject matter expert reviews it
- * If a patch has already been approved but requires a trivial rebase to merge,
-   you do not have to wait for a second +2, since the patch has already had
-   two +2s.
+* Every patch needs two +2s before being approved.
+* Its ok to hold off on an approval until a subject matter expert reviews it
+* If a patch has already been approved but requires a trivial rebase to merge,
+  you do not have to wait for a second +2, since the patch has already had
+  two +2s.

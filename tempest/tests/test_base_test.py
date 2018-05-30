@@ -13,6 +13,7 @@
 #    under the License.
 
 import mock
+from oslo_config import cfg
 
 from tempest import clients
 from tempest.common import credentials_factory as credentials
@@ -27,9 +28,12 @@ class TestBaseTestCase(base.TestCase):
     def setUp(self):
         super(TestBaseTestCase, self).setUp()
         self.useFixture(fake_config.ConfigFixture())
+        self.patchobject(config, 'TempestConfigPrivate',
+                         fake_config.FakePrivate)
         self.fixed_network_name = 'fixed-net'
-        config.CONF.compute.fixed_network_name = self.fixed_network_name
-        config.CONF.service_available.neutron = True
+        cfg.CONF.set_default('fixed_network_name', self.fixed_network_name,
+                             'compute')
+        cfg.CONF.set_default('neutron', True, 'service_available')
 
     @mock.patch.object(test.BaseTestCase, 'get_client_manager')
     @mock.patch.object(test.BaseTestCase, '_get_credentials_provider')
@@ -37,7 +41,7 @@ class TestBaseTestCase(base.TestCase):
     def test_get_tenant_network(self, mock_gtn, mock_gprov, mock_gcm):
         net_client = mock.Mock()
         mock_prov = mock.Mock()
-        mock_gcm.return_value.compute_networks_client = net_client
+        mock_gcm.return_value.networks_client = net_client
         mock_gprov.return_value = mock_prov
 
         test.BaseTestCase.get_tenant_network()
@@ -56,7 +60,7 @@ class TestBaseTestCase(base.TestCase):
     def test_get_tenant_network_with_nova_net(self, mock_man, mock_iaa,
                                               mock_giv, mock_gtn, mock_gcp,
                                               mock_gcm):
-        config.CONF.service_available.neutron = False
+        cfg.CONF.set_default('neutron', False, 'service_available')
         mock_prov = mock.Mock()
         mock_admin_man = mock.Mock()
         mock_iaa.return_value = True
@@ -81,7 +85,7 @@ class TestBaseTestCase(base.TestCase):
                                                mock_gcm):
         net_client = mock.Mock()
         mock_prov = mock.Mock()
-        mock_gcm.return_value.compute_networks_client = net_client
+        mock_gcm.return_value.networks_client = net_client
         mock_gprov.return_value = mock_prov
 
         test.BaseTestCase.get_tenant_network(credentials_type='alt')
@@ -98,7 +102,7 @@ class TestBaseTestCase(base.TestCase):
                                                 mock_gcm):
         net_client = mock.Mock()
         mock_prov = mock.Mock()
-        mock_gcm.return_value.compute_networks_client = net_client
+        mock_gcm.return_value.networks_client = net_client
         mock_gprov.return_value = mock_prov
         creds = ['foo_type', 'role1']
 

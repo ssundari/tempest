@@ -13,11 +13,14 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import testtools
+
 from tempest.api.network import base
+from tempest.common import identity
+from tempest.common import utils
 from tempest.lib.common.utils import data_utils
 from tempest.lib.common.utils import test_utils
 from tempest.lib import decorators
-from tempest import test
 
 
 class QuotasTest(base.BaseAdminNetworkTest):
@@ -38,7 +41,7 @@ class QuotasTest(base.BaseAdminNetworkTest):
     @classmethod
     def skip_checks(cls):
         super(QuotasTest, cls).skip_checks()
-        if not test.is_extension_enabled('quotas', 'network'):
+        if not utils.is_extension_enabled('quotas', 'network'):
             msg = "quotas extension not enabled."
             raise cls.skipException(msg)
 
@@ -46,10 +49,11 @@ class QuotasTest(base.BaseAdminNetworkTest):
         # Add a project to conduct the test
         project = data_utils.rand_name('test_project_')
         description = data_utils.rand_name('desc_')
-        project = self.identity_utils.create_project(name=project,
-                                                     description=description)
+        project = identity.identity_utils(self.os_admin).create_project(
+            name=project, description=description)
         project_id = project['id']
-        self.addCleanup(self.identity_utils.delete_project, project_id)
+        self.addCleanup(identity.identity_utils(self.os_admin).delete_project,
+                        project_id)
 
         # Change quotas for project
         quota_set = self.admin_quotas_client.update_quotas(
@@ -78,8 +82,24 @@ class QuotasTest(base.BaseAdminNetworkTest):
         non_default_quotas = self.admin_quotas_client.list_quotas()
         for q in non_default_quotas['quotas']:
             self.assertNotEqual(project_id, q['tenant_id'])
+        quota_set = self.admin_quotas_client.show_quotas(project_id)['quota']
+        default_quotas = self.admin_quotas_client.show_default_quotas(
+            project_id)['quota']
+        self.assertEqual(default_quotas, quota_set)
 
     @decorators.idempotent_id('2390f766-836d-40ef-9aeb-e810d78207fb')
     def test_quotas(self):
         new_quotas = {'network': 0, 'port': 0}
         self._check_quotas(new_quotas)
+
+    @testtools.skipUnless(utils.is_extension_enabled(
+        'quota_details', 'network'), 'Quota details extension not enabled.')
+    @decorators.idempotent_id('7b05ec5f-bf44-43cb-b28f-ddd72a824288')
+    def test_show_quota_details(self):
+        # Show quota details for an existing project
+        quota_details = self.admin_quotas_client.show_quota_details(
+            self.admin_quotas_client.tenant_id)['quota']
+        expected_keys = ['used', 'limit', 'reserved']
+        for resource_type in quota_details:
+            for key in expected_keys:
+                self.assertIn(key, quota_details[resource_type])

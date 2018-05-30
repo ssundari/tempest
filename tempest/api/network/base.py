@@ -88,54 +88,16 @@ class BaseNetworkTest(tempest.test.BaseTestCase):
     @classmethod
     def resource_setup(cls):
         super(BaseNetworkTest, cls).resource_setup()
-        cls.networks = []
         cls.subnets = []
         cls.ports = []
         cls.routers = []
-        cls.floating_ips = []
-        cls.metering_labels = []
-        cls.metering_label_rules = []
         cls.ethertype = "IPv" + str(cls._ip_version)
-
-    @classmethod
-    def resource_cleanup(cls):
-        if CONF.service_available.neutron:
-            # Clean up floating IPs
-            for floating_ip in cls.floating_ips:
-                test_utils.call_and_ignore_notfound_exc(
-                    cls.floating_ips_client.delete_floatingip,
-                    floating_ip['id'])
-
-            # Clean up metering label rules
-            # Not all classes in the hierarchy have the client class variable
-            if cls.metering_label_rules:
-                label_rules_client = cls.admin_metering_label_rules_client
-                for metering_label_rule in cls.metering_label_rules:
-                    test_utils.call_and_ignore_notfound_exc(
-                        label_rules_client.delete_metering_label_rule,
-                        metering_label_rule['id'])
-            # Clean up metering labels
-            for metering_label in cls.metering_labels:
-                test_utils.call_and_ignore_notfound_exc(
-                    cls.admin_metering_labels_client.delete_metering_label,
-                    metering_label['id'])
-            # Clean up ports
-            for port in cls.ports:
-                test_utils.call_and_ignore_notfound_exc(
-                    cls.ports_client.delete_port, port['id'])
-            # Clean up routers
-            for router in cls.routers:
-                test_utils.call_and_ignore_notfound_exc(
-                    cls.delete_router, router)
-            # Clean up subnets
-            for subnet in cls.subnets:
-                test_utils.call_and_ignore_notfound_exc(
-                    cls.subnets_client.delete_subnet, subnet['id'])
-            # Clean up networks
-            for network in cls.networks:
-                test_utils.call_and_ignore_notfound_exc(
-                    cls.networks_client.delete_network, network['id'])
-        super(BaseNetworkTest, cls).resource_cleanup()
+        if cls._ip_version == 4:
+            cls.cidr = netaddr.IPNetwork(CONF.network.project_network_cidr)
+            cls.mask_bits = CONF.network.project_network_mask_bits
+        elif cls._ip_version == 6:
+            cls.cidr = netaddr.IPNetwork(CONF.network.project_network_v6_cidr)
+            cls.mask_bits = CONF.network.project_network_v6_mask_bits
 
     @classmethod
     def create_network(cls, network_name=None, **kwargs):
@@ -145,7 +107,9 @@ class BaseNetworkTest(tempest.test.BaseTestCase):
 
         body = cls.networks_client.create_network(name=network_name, **kwargs)
         network = body['network']
-        cls.networks.append(network)
+        cls.addClassResourceCleanup(test_utils.call_and_ignore_notfound_exc,
+                                    cls.networks_client.delete_network,
+                                    network['id'])
         return network
 
     @classmethod
@@ -188,6 +152,9 @@ class BaseNetworkTest(tempest.test.BaseTestCase):
             message = 'Available CIDR for subnet creation could not be found'
             raise exceptions.BuildErrorException(message)
         subnet = body['subnet']
+        cls.addClassResourceCleanup(test_utils.call_and_ignore_notfound_exc,
+                                    cls.subnets_client.delete_subnet,
+                                    subnet['id'])
         cls.subnets.append(subnet)
         return subnet
 
@@ -197,6 +164,8 @@ class BaseNetworkTest(tempest.test.BaseTestCase):
         body = cls.ports_client.create_port(network_id=network['id'],
                                             **kwargs)
         port = body['port']
+        cls.addClassResourceCleanup(test_utils.call_and_ignore_notfound_exc,
+                                    cls.ports_client.delete_port, port['id'])
         cls.ports.append(port)
         return port
 
@@ -223,6 +192,8 @@ class BaseNetworkTest(tempest.test.BaseTestCase):
             name=router_name, external_gateway_info=ext_gw_info,
             admin_state_up=admin_state_up, **kwargs)
         router = body['router']
+        cls.addClassResourceCleanup(test_utils.call_and_ignore_notfound_exc,
+                                    cls.delete_router, router)
         cls.routers.append(router)
         return router
 
@@ -232,7 +203,9 @@ class BaseNetworkTest(tempest.test.BaseTestCase):
         body = cls.floating_ips_client.create_floatingip(
             floating_network_id=external_network_id)
         fip = body['floatingip']
-        cls.floating_ips.append(fip)
+        cls.addClassResourceCleanup(test_utils.call_and_ignore_notfound_exc,
+                                    cls.floating_ips_client.delete_floatingip,
+                                    fip['id'])
         return fip
 
     @classmethod

@@ -36,22 +36,20 @@ class AccountTest(base.BaseObjectTest):
     @classmethod
     def setup_credentials(cls):
         super(AccountTest, cls).setup_credentials()
-        cls.os = cls.os_roles_operator
         cls.os_operator = cls.os_roles_operator_alt
 
     @classmethod
     def resource_setup(cls):
         super(AccountTest, cls).resource_setup()
         for i in range(ord('a'), ord('f') + 1):
-            name = data_utils.rand_name(name='%s-' % chr(i))
-            cls.container_client.create_container(name)
+            name = data_utils.rand_name(name='%s-' % six.int2byte(i))
+            cls.container_client.update_container(name)
+            cls.addClassResourceCleanup(base.delete_containers,
+                                        [name],
+                                        cls.container_client,
+                                        cls.object_client)
             cls.containers.append(name)
         cls.containers_count = len(cls.containers)
-
-    @classmethod
-    def resource_cleanup(cls):
-        cls.delete_containers()
-        super(AccountTest, cls).resource_cleanup()
 
     @decorators.attr(type='smoke')
     @decorators.idempotent_id('3499406a-ae53-4f8c-b43a-133d4dc6fe3f')
@@ -243,7 +241,7 @@ class AccountTest(base.BaseObjectTest):
     @decorators.idempotent_id('365e6fc7-1cfe-463b-a37c-8bd08d47b6aa')
     def test_list_containers_with_prefix(self):
         # list containers that have a name that starts with a prefix
-        prefix = '{0}-a'.format(CONF.resources_prefix)
+        prefix = 'tempest-a'
         params = {'prefix': prefix}
         resp, container_list = self.account_client.list_account_containers(
             params=params)

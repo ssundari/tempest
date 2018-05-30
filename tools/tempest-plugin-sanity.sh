@@ -20,7 +20,7 @@
 # What it does:
 # * Creates the virtualenv
 # * Install tempest
-# * Retrive the project lists having tempest plugin if project name is
+# * Retrieve the project lists having tempest plugin if project name is
 #   given.
 # * For each project in a list, It does:
 #   * Clone the Project
@@ -120,3 +120,8 @@ for project in $PROJECT_LIST; do
         failed_plugin+=", $project"
     fi
 done
+
+# Check for failed status
+if [[ -n $failed_plugin ]]; then
+    exit 1
+fi

@@ -12,26 +12,11 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+from debtcollector import moves
 
-from oslo_serialization import jsonutils as json
-
-from tempest.lib.common import rest_client
+from tempest.lib.services.volume.v3 import volume_manage_client
 
 
-class VolumeManageClient(rest_client.RestClient):
-    """Volume manage V2 client."""
-
-    api_version = "v2"
-
-    def manage_volume(self, **kwargs):
-        """Manage existing volume.
-
-        For a full list of available parameters, please refer to the official
-        API reference:
-        https://developer.openstack.org/api-ref/block-storage/v2/#manage-existing-volume
-        """
-        post_body = json.dumps({'volume': kwargs})
-        resp, body = self.post('os-volume-manage', post_body)
-        self.expected_success(202, resp.status)
-        body = json.loads(body)
-        return rest_client.ResponseBody(resp, body)
+VolumeManageClient = moves.moved_class(
+    volume_manage_client.VolumeManageClient, 'VolumeManageClient',
+    __name__, version="Rocky", removal_version='?')

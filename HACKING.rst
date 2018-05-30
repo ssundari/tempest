@@ -9,14 +9,14 @@ Tempest Specific Commandments
 ------------------------------
 
 - [T102] Cannot import OpenStack python clients in tempest/api &
-         tempest/scenario tests
+  tempest/scenario tests
 - [T104] Scenario tests require a services decorator
 - [T105] Tests cannot use setUpClass/tearDownClass
 - [T106] vim configuration should not be kept in source files.
 - [T107] Check that a service tag isn't in the module path
 - [T108] Check no hyphen at the end of rand_name() argument
 - [T109] Cannot use testtools.skip decorator; instead use
-         decorators.skip_because from tempest.lib
+  decorators.skip_because from tempest.lib
 - [T110] Check that service client names of GET should be consistent
 - [T111] Check that service client names of DELETE should be consistent
 - [T112] Check that tempest.lib should not import local tempest code
@@ -84,7 +84,7 @@ For example ``self.assertIn`` can include the whole set.
 It is recommended to use testtools `matcher`_ for the more tricky assertions.
 You can implement your own specific `matcher`_ as well.
 
-.. _matcher: http://testtools.readthedocs.org/en/latest/for-test-authors.html#matchers
+.. _matcher: https://testtools.readthedocs.org/en/latest/for-test-authors.html#matchers
 
 If the test case fails you can see the related logs and the information
 carried by the exception (exception class, backtrack and exception info).
@@ -103,10 +103,10 @@ to work even if just one ``test_method`` is selected for execution.
 Service Tagging
 ---------------
 Service tagging is used to specify which services are exercised by a particular
-test method. You specify the services with the ``tempest.test.services``
+test method. You specify the services with the ``tempest.common.utils.services``
 decorator. For example:
 
-@services('compute', 'image')
+@utils.services('compute', 'image')
 
 Valid service tag names are the same as the list of directories in tempest.api
 that have tests.
@@ -121,32 +121,38 @@ however they do not need to be tagged as ``compute``.
 Test fixtures and resources
 ---------------------------
 Test level resources should be cleaned-up after the test execution. Clean-up
-is best scheduled using `addCleanup` which ensures that the resource cleanup
+is best scheduled using ``addCleanup`` which ensures that the resource cleanup
 code is always invoked, and in reverse order with respect to the creation
 order.
 
-Test class level resources should be defined in the `resource_setup` method of
-the test class, except for any credential obtained from the credentials
-provider, which should be set-up in the `setup_credentials` method.
+Test class level resources should be defined in the ``resource_setup`` method
+of the test class, except for any credential obtained from the credentials
+provider, which should be set-up in the ``setup_credentials`` method.
+Cleanup is best scheduled using ``addClassResourceCleanup`` which ensures that
+the cleanup code is always invoked, and in reverse order with respect to the
+creation order.
 
-The test base class `BaseTestCase` defines Tempest framework for class level
-fixtures. `setUpClass` and `tearDownClass` are defined here and cannot be
+In both cases - test level and class level cleanups - a wait loop should be
+scheduled before the actual delete of resources with an asynchronous delete.
+
+The test base class ``BaseTestCase`` defines Tempest framework for class level
+fixtures. ``setUpClass`` and ``tearDownClass`` are defined here and cannot be
 overwritten by subclasses (enforced via hacking rule T105).
 
 Set-up is split in a series of steps (setup stages), which can be overwritten
 by test classes. Set-up stages are:
 
-- `skip_checks`
-- `setup_credentials`
-- `setup_clients`
-- `resource_setup`
+- ``skip_checks``
+- ``setup_credentials``
+- ``setup_clients``
+- ``resource_setup``
 
 Tear-down is also split in a series of steps (teardown stages), which are
 stacked for execution only if the corresponding setup stage had been
 reached during the setup phase. Tear-down stages are:
 
-- `clear_credentials` (defined in the base test class)
-- `resource_cleanup`
+- ``clear_credentials`` (defined in the base test class)
+- ``resource_cleanup``
 
 Skipping Tests
 --------------
@@ -172,7 +178,7 @@ negative testing should be handled with project function tests.
 All negative tests should be based on `API-WG guideline`_ . Such negative
 tests can block any changes from accurate failure code to invalid one.
 
-.. _API-WG guideline: http://specs.openstack.org/openstack/api-wg/guidelines/http.html#failure-code-clarifications
+.. _API-WG guideline: https://specs.openstack.org/openstack/api-wg/guidelines/http.html#failure-code-clarifications
 
 If facing some gray area which is not clarified on the above guideline, propose
 a new guideline to the API-WG. With a proposal to the API-WG we will be able to
@@ -357,13 +363,24 @@ to Tempest.
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 When adding tests for new features that were not in previous releases of the
-projects the new test has to be properly skipped with a feature flag. Whether
-this is just as simple as using the @test.requires_ext() decorator to check
-if the required extension (or discoverable optional API) is enabled or adding
-a new config option to the appropriate section. If there isn't a method of
-selecting the new **feature** from the config file then there won't be a
-mechanism to disable the test with older stable releases and the new test won't
-be able to merge.
+projects the new test has to be properly skipped with a feature flag. This can
+be just as simple as using the ``@utils.requires_ext()`` or
+``testtools.skipUnless`` decorators to check if the required extension (or
+discoverable optional API) or feature is enabled or can be as difficult as
+adding a new config option to the appropriate section. If there isn't a method
+of selecting the new **feature** from the config file then there won't be a
+mechanism to disable the test with older stable releases and the new test
+won't be able to merge.
+
+Introduction of a new feature flag requires specifying a default value for
+the corresponding config option that is appropriate in the latest OpenStack
+release. Because Tempest is branchless, the feature flag's default value will
+need to be overridden to a value that is appropriate in earlier releases
+in which the feature isn't available. In DevStack, this can be accomplished
+by modifying Tempest's `lib installation script`_ for previous branches
+(because DevStack is branched).
+
+.. _lib installation script: http://git.openstack.org/cgit/openstack-dev/devstack/tree/lib/tempest
 
 2. Bug fix on core project needing Tempest changes
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -379,8 +396,8 @@ following procedure::
 
 Otherwise the bug fix won't be able to land in the project.
 
-Handily, `Zuul’s cross-repository dependencies
-<https://docs.openstack.org/infra/zuul/gating.html#cross-repository-dependencies>`_.
+Handily, `Zuul's cross-repository dependencies
+<https://docs.openstack.org/infra/zuul/user/gating.html#cross-project-dependencies>`_.
 can be leveraged to do without step 2 and to have steps 3 and 4 happen
 "atomically". To do that, make the patch written in step 1 to depend (refer to
 Zuul's documentation above) on the patch written in step 4. The commit message

@@ -17,13 +17,13 @@ import json
 from oslo_log import log as logging
 
 from tempest.api.compute import base
+from tempest.common import utils
 from tempest.common.utils.linux import remote_client
 from tempest import config
 from tempest.lib.common.utils import data_utils
 from tempest.lib.common.utils import test_utils
 from tempest.lib import decorators
 from tempest.lib import exceptions
-from tempest import test
 
 
 CONF = config.CONF
@@ -47,8 +47,8 @@ class DeviceTaggingTest(base.BaseV2ComputeTest):
             raise cls.skipException('Neutron is required')
         if not CONF.validation.run_validation:
             raise cls.skipException('Validation must be enabled')
-        if (not CONF.compute_feature_enabled.config_drive
-            and not CONF.compute_feature_enabled.metadata_service):
+        if (not CONF.compute_feature_enabled.config_drive and
+                not CONF.compute_feature_enabled.metadata_service):
             raise cls.skipException('One of metadata or config drive must be '
                                     'enabled')
 
@@ -66,11 +66,6 @@ class DeviceTaggingTest(base.BaseV2ComputeTest):
                                   dhcp=True)
         super(DeviceTaggingTest, cls).setup_credentials()
 
-    @classmethod
-    def resource_setup(cls):
-        cls.set_validation_resources()
-        super(DeviceTaggingTest, cls).resource_setup()
-
     def verify_device_metadata(self, md_json):
         md_dict = json.loads(md_json)
         for d in md_dict['devices']:
@@ -87,14 +82,16 @@ class DeviceTaggingTest(base.BaseV2ComputeTest):
             # A hypervisor may present multiple paths to a tagged disk, so
             # there may be duplicated tags in the metadata, use set() to
             # remove duplicated tags.
-            found_devices = [d['tags'][0] for d in md_dict['devices']]
+            # Some hypervisors might report devices with no tags as well.
+            found_devices = [d['tags'][0] for d in md_dict['devices']
+                             if d.get('tags')]
             self.assertEqual(set(found_devices), set(['port-1', 'port-2',
                                                       'net-1', 'net-2-100',
                                                       'net-2-200', 'boot',
                                                       'other']))
 
     @decorators.idempotent_id('a2e65a6c-66f1-4442-aaa8-498c31778d96')
-    @test.services('network', 'volume', 'image')
+    @utils.services('network', 'volume', 'image')
     def test_device_tagging(self):
         # Create volumes
         # The create_volume methods waits for the volumes to be available and
@@ -137,13 +134,15 @@ class DeviceTaggingTest(base.BaseV2ComputeTest):
         self.addCleanup(self.ports_client.delete_port, self.port2['id'])
 
         # Create server
-        admin_pass = data_utils.rand_password()
         config_drive_enabled = CONF.compute_feature_enabled.config_drive
+        validation_resources = self.get_test_validation_resources(
+            self.os_primary)
 
         server = self.create_test_server(
             validatable=True,
+            wait_until='ACTIVE',
+            validation_resources=validation_resources,
             config_drive=config_drive_enabled,
-            adminPass=admin_pass,
             name=data_utils.rand_name('device-tagging-server'),
             networks=[
                 # Validation network for ssh
@@ -207,11 +206,11 @@ class DeviceTaggingTest(base.BaseV2ComputeTest):
 
         self.addCleanup(self.delete_server, server['id'])
 
+        server = self.servers_client.show_server(server['id'])['server']
         self.ssh_client = remote_client.RemoteClient(
-            self.get_server_ip(server),
+            self.get_server_ip(server, validation_resources),
             CONF.validation.image_ssh_user,
-            admin_pass,
-            self.validation_resources['keypair']['private_key'],
+            pkey=validation_resources['keypair']['private_key'],
             server=server,
             servers_client=self.servers_client)
 
@@ -262,25 +261,13 @@ class DeviceTaggingTest(base.BaseV2ComputeTest):
 
         # Verify metadata on config drive
         if CONF.compute_feature_enabled.config_drive:
-            cmd_blkid = 'blkid -t LABEL=config-2 -o device'
             LOG.info('Attempting to verify tagged devices in server %s via '
                      'the config drive.', server['id'])
-            dev_name = self.ssh_client.exec_command(cmd_blkid)
-            dev_name = dev_name.rstrip()
-            try:
-                self.ssh_client.exec_command('sudo mount %s /mnt' % dev_name)
-            except exceptions.SSHExecCommandFailed:
-                # So the command failed, let's try to know why and print some
-                # useful information.
-                lsblk = self.ssh_client.exec_command('sudo lsblk --fs --ascii')
-                LOG.error("Mounting %s on /mnt failed. Right after the "
-                          "failure 'lsblk' in the guest reported:\n%s",
-                          dev_name, lsblk)
-                raise
-
+            self.ssh_client.mount_config_drive()
             cmd_md = 'sudo cat /mnt/openstack/latest/meta_data.json'
             md_json = self.ssh_client.exec_command(cmd_md)
             self.verify_device_metadata(md_json)
+            self.ssh_client.unmount_config_drive()
 
 
 class DeviceTaggingTestV2_42(DeviceTaggingTest):

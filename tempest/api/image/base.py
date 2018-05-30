@@ -46,16 +46,6 @@ class BaseImageTest(tempest.test.BaseTestCase):
         cls.created_images = []
 
     @classmethod
-    def resource_cleanup(cls):
-        for image_id in cls.created_images:
-            test_utils.call_and_ignore_notfound_exc(
-                cls.client.delete_image, image_id)
-
-        for image_id in cls.created_images:
-                cls.client.wait_for_resource_deletion(image_id)
-        super(BaseImageTest, cls).resource_cleanup()
-
-    @classmethod
     def create_image(cls, data=None, **kwargs):
         """Wrapper that returns a test image."""
 
@@ -75,6 +65,10 @@ class BaseImageTest(tempest.test.BaseTestCase):
         if 'image' in image:
             image = image['image']
         cls.created_images.append(image['id'])
+        cls.addClassResourceCleanup(cls.client.wait_for_resource_deletion,
+                                    image['id'])
+        cls.addClassResourceCleanup(test_utils.call_and_ignore_notfound_exc,
+                                    cls.client.delete_image, image['id'])
         return image
 
     @classmethod
@@ -148,16 +142,17 @@ class BaseV2ImageTest(BaseImageTest):
         cls.schemas_client = cls.os_primary.schemas_client
         cls.versions_client = cls.os_primary.image_versions_client
 
-    def create_namespace(cls, namespace_name=None, visibility='public',
+    def create_namespace(self, namespace_name=None, visibility='public',
                          description='Tempest', protected=False,
                          **kwargs):
         if not namespace_name:
             namespace_name = data_utils.rand_name('test-ns')
         kwargs.setdefault('display_name', namespace_name)
-        namespace = cls.namespaces_client.create_namespace(
+        namespace = self.namespaces_client.create_namespace(
             namespace=namespace_name, visibility=visibility,
             description=description, protected=protected, **kwargs)
-        cls.addCleanup(cls.namespaces_client.delete_namespace, namespace_name)
+        self.addCleanup(self.namespaces_client.delete_namespace,
+                        namespace_name)
         return namespace
 
 
@@ -191,21 +186,11 @@ class BaseV2MemberImageTest(BaseV2ImageTest):
         return image['id']
 
 
-class BaseV1ImageAdminTest(BaseImageTest):
-    credentials = ['admin', 'primary']
+class BaseV2ImageAdminTest(BaseV2ImageTest):
 
-    @classmethod
-    def setup_clients(cls):
-        super(BaseV1ImageAdminTest, cls).setup_clients()
-        cls.client = cls.os_primary.image_client
-        cls.admin_client = cls.os_admin.image_client
-
-
-class BaseV2ImageAdminTest(BaseImageTest):
     credentials = ['admin', 'primary']
 
     @classmethod
     def setup_clients(cls):
         super(BaseV2ImageAdminTest, cls).setup_clients()
-        cls.client = cls.os_primary.image_client_v2
         cls.admin_client = cls.os_admin.image_client_v2

@@ -29,6 +29,7 @@ from tempest.lib.api_schema.response.compute.v2_26 import servers as schemav226
 from tempest.lib.api_schema.response.compute.v2_3 import servers as schemav23
 from tempest.lib.api_schema.response.compute.v2_47 import servers as schemav247
 from tempest.lib.api_schema.response.compute.v2_48 import servers as schemav248
+from tempest.lib.api_schema.response.compute.v2_54 import servers as schemav254
 from tempest.lib.api_schema.response.compute.v2_6 import servers as schemav26
 from tempest.lib.api_schema.response.compute.v2_9 import servers as schemav29
 from tempest.lib.common import rest_client
@@ -47,7 +48,8 @@ class ServersClient(base_compute_client.BaseComputeClient):
         {'min': '2.19', 'max': '2.25', 'schema': schemav219},
         {'min': '2.26', 'max': '2.46', 'schema': schemav226},
         {'min': '2.47', 'max': '2.47', 'schema': schemav247},
-        {'min': '2.48', 'max': None, 'schema': schemav248}]
+        {'min': '2.48', 'max': '2.53', 'schema': schemav248},
+        {'min': '2.54', 'max': None, 'schema': schemav254}]
 
     def __init__(self, auth_provider, service, region,
                  enable_instance_password=True, **kwargs):
@@ -126,7 +128,7 @@ class ServersClient(base_compute_client.BaseComputeClient):
 
         For a full list of available parameters, please refer to the official
         API reference:
-        http://developer.openstack.org/api-ref-compute-v2.1.html#showServer
+        https://developer.openstack.org/api-ref/compute/#show-server-details
         """
         resp, body = self.get("servers/%s" % server_id)
         body = json.loads(body)
@@ -156,11 +158,11 @@ class ServersClient(base_compute_client.BaseComputeClient):
 
         url = 'servers'
         schema = self.get_schema(self.schema_versions_info)
-        _schema = schema.list_servers
-
         if detail:
             url += '/detail'
             _schema = schema.list_servers_detail
+        else:
+            _schema = schema.list_servers
         if params:
             url += '?%s' % urllib.urlencode(params)
 
@@ -338,7 +340,7 @@ class ServersClient(base_compute_client.BaseComputeClient):
 
         For a full list of available parameters, please refer to the official
         API reference:
-        https://developer.openstack.org/api-ref/compute/#create-or-replace-metadata-items
+        https://developer.openstack.org/api-ref/compute/#replace-metadata-items
         """
         if no_metadata_field:
             post_body = ""
@@ -355,7 +357,7 @@ class ServersClient(base_compute_client.BaseComputeClient):
 
         For a full list of available parameters, please refer to the official
         API reference:
-        https://developer.openstack.org/api-ref/compute/#update-metadata-items
+        https://developer.openstack.org/api-ref/compute/#create-or-update-metadata-items
         """
         post_body = json.dumps({'metadata': meta})
         resp, body = self.post('servers/%s/metadata' % server_id,
@@ -626,9 +628,7 @@ class ServersClient(base_compute_client.BaseComputeClient):
 
         For a full list of available parameters, please refer to the official
         API reference:
-        TODO (markus_z) The api-ref for that isn't yet available, update this
-        here when the docs in Nova are updated. The old API is at
-        http://developer.openstack.org/api-ref/compute/#get-serial-console-os-getserialconsole-action
+        https://developer.openstack.org/api-ref/compute/#create-remote-console
         """
         param = {
             'remote_console': {
@@ -739,7 +739,7 @@ class ServersClient(base_compute_client.BaseComputeClient):
 
         For a full list of available parameters, please refer to the official
         API reference:
-        https://developer.openstack.org/api-ref/compute/#get-vnc-console-os-getvncconsole-action
+        https://developer.openstack.org/api-ref/compute/#get-vnc-console-os-getvncconsole-action-deprecated
         """
         return self.action(server_id, "os-getVNCConsole",
                            schema.get_vnc_console, **kwargs)
@@ -749,7 +749,7 @@ class ServersClient(base_compute_client.BaseComputeClient):
 
         For a full list of available parameters, please refer to the official
         API reference:
-        https://developer.openstack.org/api-ref/compute/#add-associate-fixed-ip-addfixedip-action
+        https://developer.openstack.org/api-ref/compute/#add-associate-fixed-ip-addfixedip-action-deprecated
         """
         return self.action(server_id, 'addFixedIp', **kwargs)
 
@@ -758,7 +758,7 @@ class ServersClient(base_compute_client.BaseComputeClient):
 
         For a full list of available parameters, please refer to the official
         API reference:
-        https://developer.openstack.org/api-ref/compute/#remove-disassociate-fixed-ip-removefixedip-action
+        https://developer.openstack.org/api-ref/compute/#remove-disassociate-fixed-ip-removefixedip-action-deprecated
         """
         return self.action(server_id, 'removeFixedIp', **kwargs)
 

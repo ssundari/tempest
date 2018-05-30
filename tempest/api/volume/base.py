@@ -31,6 +31,11 @@ class BaseVolumeTest(api_version_utils.BaseMicroversionTest,
     """Base test case class for all Cinder API tests."""
 
     _api_version = 2
+    # if api_v2 is not enabled while api_v3 is enabled, the volume v2 classes
+    # should be transferred to volume v3 classes.
+    if (not CONF.volume_feature_enabled.api_v2 and
+        CONF.volume_feature_enabled.api_v3):
+        _api_version = 3
     credentials = ['primary']
 
     @classmethod
@@ -72,6 +77,11 @@ class BaseVolumeTest(api_version_utils.BaseMicroversionTest,
         if cls._api_version == 3:
             cls.backups_client = cls.os_primary.backups_v3_client
             cls.volumes_client = cls.os_primary.volumes_v3_client
+            cls.messages_client = cls.os_primary.volume_v3_messages_client
+            cls.versions_client = cls.os_primary.volume_v3_versions_client
+            cls.groups_client = cls.os_primary.groups_v3_client
+            cls.group_snapshots_client = (
+                cls.os_primary.group_snapshots_v3_client)
         else:
             cls.backups_client = cls.os_primary.backups_v2_client
             cls.volumes_client = cls.os_primary.volumes_v2_client
@@ -82,10 +92,6 @@ class BaseVolumeTest(api_version_utils.BaseMicroversionTest,
         cls.availability_zone_client = (
             cls.os_primary.volume_v2_availability_zone_client)
         cls.volume_limits_client = cls.os_primary.volume_v2_limits_client
-        cls.messages_client = cls.os_primary.volume_v3_messages_client
-        cls.versions_client = cls.os_primary.volume_v3_versions_client
-        cls.groups_client = cls.os_primary.groups_v3_client
-        cls.group_snapshots_client = cls.os_primary.group_snapshots_v3_client
 
     def setUp(self):
         super(BaseVolumeTest, self).setUp()
@@ -100,18 +106,10 @@ class BaseVolumeTest(api_version_utils.BaseMicroversionTest,
                 cls.min_microversion,
                 CONF.volume.min_microversion))
 
-        cls.snapshots = []
-        cls.volumes = []
         cls.image_ref = CONF.compute.image_ref
         cls.flavor_ref = CONF.compute.flavor_ref
         cls.build_interval = CONF.volume.build_interval
         cls.build_timeout = CONF.volume.build_timeout
-
-    @classmethod
-    def resource_cleanup(cls):
-        cls.clear_snapshots()
-        cls.clear_volumes()
-        super(BaseVolumeTest, cls).resource_cleanup()
 
     @classmethod
     def create_volume(cls, wait_until='available', **kwargs):
@@ -132,7 +130,9 @@ class BaseVolumeTest(api_version_utils.BaseMicroversionTest,
             kwargs['name'] = name
 
         volume = cls.volumes_client.create_volume(**kwargs)['volume']
-        cls.volumes.append(volume)
+        cls.addClassResourceCleanup(test_utils.call_and_ignore_notfound_exc,
+                                    cls.delete_volume, cls.volumes_client,
+                                    volume['id'])
         waiters.wait_for_volume_resource_status(cls.volumes_client,
                                                 volume['id'], wait_until)
         return volume
@@ -146,7 +146,8 @@ class BaseVolumeTest(api_version_utils.BaseMicroversionTest,
 
         snapshot = cls.snapshots_client.create_snapshot(
             volume_id=volume_id, **kwargs)['snapshot']
-        cls.snapshots.append(snapshot['id'])
+        cls.addClassResourceCleanup(test_utils.call_and_ignore_notfound_exc,
+                                    cls.delete_snapshot, snapshot['id'])
         waiters.wait_for_volume_resource_status(cls.snapshots_client,
                                                 snapshot['id'], 'available')
         return snapshot
@@ -175,14 +176,13 @@ class BaseVolumeTest(api_version_utils.BaseMicroversionTest,
         client.delete_volume(volume_id)
         client.wait_for_resource_deletion(volume_id)
 
-    def delete_snapshot(self, snapshot_id, snapshots_client=None):
+    @classmethod
+    def delete_snapshot(cls, snapshot_id, snapshots_client=None):
         """Delete snapshot by the given client"""
         if snapshots_client is None:
-            snapshots_client = self.snapshots_client
+            snapshots_client = cls.snapshots_client
         snapshots_client.delete_snapshot(snapshot_id)
         snapshots_client.wait_for_resource_deletion(snapshot_id)
-        if snapshot_id in self.snapshots:
-            self.snapshots.remove(snapshot_id)
 
     def attach_volume(self, server_id, volume_id):
         """Attach a volume to a server"""
@@ -195,31 +195,6 @@ class BaseVolumeTest(api_version_utils.BaseMicroversionTest,
                         self.volumes_client, volume_id, 'available')
         self.addCleanup(self.servers_client.detach_volume, server_id,
                         volume_id)
-
-    @classmethod
-    def clear_volumes(cls):
-        for volume in cls.volumes:
-            try:
-                cls.volumes_client.delete_volume(volume['id'])
-            except Exception:
-                pass
-
-        for volume in cls.volumes:
-            try:
-                cls.volumes_client.wait_for_resource_deletion(volume['id'])
-            except Exception:
-                pass
-
-    @classmethod
-    def clear_snapshots(cls):
-        for snapshot in cls.snapshots:
-            test_utils.call_and_ignore_notfound_exc(
-                cls.snapshots_client.delete_snapshot, snapshot)
-
-        for snapshot in cls.snapshots:
-            test_utils.call_and_ignore_notfound_exc(
-                cls.snapshots_client.wait_for_resource_deletion,
-                snapshot)
 
     def create_server(self, wait_until='ACTIVE', **kwargs):
         name = kwargs.pop(
@@ -241,6 +216,27 @@ class BaseVolumeTest(api_version_utils.BaseMicroversionTest,
                         self.servers_client.delete_server, body['id'])
         return body
 
+    def create_group(self, **kwargs):
+        if 'name' not in kwargs:
+            kwargs['name'] = data_utils.rand_name(
+                self.__class__.__name__ + '-Group')
+
+        group = self.groups_client.create_group(**kwargs)['group']
+        self.addCleanup(test_utils.call_and_ignore_notfound_exc,
+                        self.delete_group, group['id'])
+        waiters.wait_for_volume_resource_status(
+            self.groups_client, group['id'], 'available')
+        return group
+
+    def delete_group(self, group_id, delete_volumes=True):
+        self.groups_client.delete_group(group_id, delete_volumes)
+        if delete_volumes:
+            vols = self.volumes_client.list_volumes(detail=True)['volumes']
+            for vol in vols:
+                if vol['group_id'] == group_id:
+                    self.volumes_client.wait_for_resource_deletion(vol['id'])
+        self.groups_client.wait_for_resource_deletion(group_id)
+
 
 class BaseVolumeAdminTest(BaseVolumeTest):
     """Base test case class for all Volume Admin API tests."""
@@ -259,6 +255,11 @@ class BaseVolumeAdminTest(BaseVolumeTest):
         cls.admin_volume_client = cls.os_admin.volumes_v2_client
         if cls._api_version == 3:
             cls.admin_volume_client = cls.os_admin.volumes_v3_client
+            cls.admin_groups_client = cls.os_admin.groups_v3_client
+            cls.admin_messages_client = cls.os_admin.volume_v3_messages_client
+            cls.admin_group_snapshots_client = \
+                cls.os_admin.group_snapshots_v3_client
+            cls.admin_group_types_client = cls.os_admin.group_types_v3_client
         cls.admin_hosts_client = cls.os_admin.volume_hosts_v2_client
         cls.admin_snapshot_manage_client = \
             cls.os_admin.snapshot_manage_v2_client
@@ -274,24 +275,6 @@ class BaseVolumeAdminTest(BaseVolumeTest):
             cls.os_admin.volume_capabilities_v2_client
         cls.admin_scheduler_stats_client = \
             cls.os_admin.volume_scheduler_stats_v2_client
-        cls.admin_messages_client = cls.os_admin.volume_v3_messages_client
-        cls.admin_groups_client = cls.os_admin.groups_v3_client
-        cls.admin_group_snapshots_client = \
-            cls.os_admin.group_snapshots_v3_client
-        cls.admin_group_types_client = cls.os_admin.group_types_v3_client
-
-    @classmethod
-    def resource_setup(cls):
-        super(BaseVolumeAdminTest, cls).resource_setup()
-
-        cls.qos_specs = []
-        cls.volume_types = []
-
-    @classmethod
-    def resource_cleanup(cls):
-        cls.clear_qos_specs()
-        super(BaseVolumeAdminTest, cls).resource_cleanup()
-        cls.clear_volume_types()
 
     @classmethod
     def create_test_qos_specs(cls, name=None, consumer=None, **kwargs):
@@ -300,7 +283,7 @@ class BaseVolumeAdminTest(BaseVolumeTest):
         consumer = consumer or 'front-end'
         qos_specs = cls.admin_volume_qos_client.create_qos(
             name=name, consumer=consumer, **kwargs)['qos_specs']
-        cls.qos_specs.append(qos_specs['id'])
+        cls.addClassResourceCleanup(cls.clear_qos_spec, qos_specs['id'])
         return qos_specs
 
     @classmethod
@@ -309,7 +292,7 @@ class BaseVolumeAdminTest(BaseVolumeTest):
         name = name or data_utils.rand_name(cls.__name__ + '-volume-type')
         volume_type = cls.admin_volume_types_client.create_volume_type(
             name=name, **kwargs)['volume_type']
-        cls.volume_types.append(volume_type['id'])
+        cls.addClassResourceCleanup(cls.clear_volume_type, volume_type['id'])
         return volume_type
 
     def create_group_type(self, name=None, **kwargs):
@@ -323,22 +306,18 @@ class BaseVolumeAdminTest(BaseVolumeTest):
         return group_type
 
     @classmethod
-    def clear_qos_specs(cls):
-        for qos_id in cls.qos_specs:
-            test_utils.call_and_ignore_notfound_exc(
-                cls.admin_volume_qos_client.delete_qos, qos_id)
+    def clear_qos_spec(cls, qos_id):
+        test_utils.call_and_ignore_notfound_exc(
+            cls.admin_volume_qos_client.delete_qos, qos_id)
 
-        for qos_id in cls.qos_specs:
-            test_utils.call_and_ignore_notfound_exc(
-                cls.admin_volume_qos_client.wait_for_resource_deletion, qos_id)
+        test_utils.call_and_ignore_notfound_exc(
+            cls.admin_volume_qos_client.wait_for_resource_deletion, qos_id)
 
     @classmethod
-    def clear_volume_types(cls):
-        for vol_type in cls.volume_types:
-            test_utils.call_and_ignore_notfound_exc(
-                cls.admin_volume_types_client.delete_volume_type, vol_type)
+    def clear_volume_type(cls, vol_type_id):
+        test_utils.call_and_ignore_notfound_exc(
+            cls.admin_volume_types_client.delete_volume_type, vol_type_id)
 
-        for vol_type in cls.volume_types:
-            test_utils.call_and_ignore_notfound_exc(
-                cls.admin_volume_types_client.wait_for_resource_deletion,
-                vol_type)
+        test_utils.call_and_ignore_notfound_exc(
+            cls.admin_volume_types_client.wait_for_resource_deletion,
+            vol_type_id)

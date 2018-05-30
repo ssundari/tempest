@@ -79,10 +79,16 @@ class ListServersNegativeTestJSON(base.BaseV2ComputeTest):
     @decorators.attr(type=['negative'])
     @decorators.idempotent_id('fcdf192d-0f74-4d89-911f-1ec002b822c4')
     def test_list_servers_status_non_existing(self):
-        # Return an empty list when invalid status is specified
-        body = self.client.list_servers(status='non_existing_status')
-        servers = body['servers']
-        self.assertEmpty(servers)
+        # When invalid status is specified, up to microversion 2.37,
+        # an empty list is returnd, and starting from microversion 2.38,
+        # a 400 error is returned in that case.
+        if self.is_requested_microversion_compatible('2.37'):
+            body = self.client.list_servers(status='non_existing_status')
+            servers = body['servers']
+            self.assertEmpty(servers)
+        else:
+            self.assertRaises(lib_exc.BadRequest, self.client.list_servers,
+                              status='non_existing_status')
 
     @decorators.attr(type=['negative'])
     @decorators.idempotent_id('d47c17fb-eebd-4287-8e95-f20a7e627b18')
@@ -119,8 +125,12 @@ class ListServersNegativeTestJSON(base.BaseV2ComputeTest):
     @decorators.attr(type=['negative'])
     @decorators.idempotent_id('74745ad8-b346-45b5-b9b8-509d7447fc1f')
     def test_list_servers_by_changes_since_future_date(self):
-        # Return an empty list when a date in the future is passed
-        changes_since = {'changes-since': '2051-01-01T12:34:00Z'}
+        # Return an empty list when a date in the future is passed.
+        # updated_at field may haven't been set at the point in the boot
+        # process where build_request still exists, so add
+        # {'status': 'ACTIVE'} along with changes-since as filter.
+        changes_since = {'changes-since': '2051-01-01T12:34:00Z',
+                         'status': 'ACTIVE'}
         body = self.client.list_servers(**changes_since)
         self.assertEmpty(body['servers'])
 

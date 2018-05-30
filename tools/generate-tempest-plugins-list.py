@@ -28,12 +28,12 @@ import re
 
 try:
     # For Python 3.0 and later
-    from urllib.error import HTTPError as HTTPError
+    from urllib.error import HTTPError
     import urllib.request as urllib
 except ImportError:
     # Fall back to Python 2's urllib2
     import urllib2 as urllib
-    from urllib2 import HTTPError as HTTPError
+    from urllib2 import HTTPError
 
 
 url = 'https://review.openstack.org/projects/'
@@ -75,11 +75,13 @@ r = urllib.urlopen(url)
 # json library won't choke.
 projects = sorted(filter(is_in_openstack_namespace, json.loads(r.read()[4:])))
 
-# Retrieve projects having no deb, ui or spec namespace as those namespaces
-# do not contains tempest plugins.
-projects_list = [i for i in projects if not (i.startswith('openstack/deb-') or
-                                             i.endswith('-ui') or
-                                             i.endswith('-specs'))]
+# Retrieve projects having no deb, puppet, ui or spec namespace as those
+# namespaces do not contains tempest plugins.
+projects_list = [i for i in projects if not (
+    i.startswith('openstack/deb-') or
+    i.startswith('openstack/puppet-') or
+    i.endswith('-ui') or
+    i.endswith('-specs'))]
 
 found_plugins = list(filter(has_tempest_plugin, projects_list))
 

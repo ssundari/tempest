@@ -18,6 +18,7 @@ from tempest import config
 from tempest.lib.common.utils import data_utils
 from tempest.lib.common.utils import test_utils
 from tempest.lib import decorators
+from tempest.lib import exceptions
 
 CONF = config.CONF
 
@@ -33,19 +34,6 @@ class DomainsTestJSON(base.BaseIdentityV3AdminTest):
         for i in range(3):
             domain = cls.create_domain(enabled=i < 2)
             cls.setup_domains.append(domain)
-
-    @classmethod
-    def resource_cleanup(cls):
-        for domain in cls.setup_domains:
-            cls._delete_domain(domain['id'])
-        super(DomainsTestJSON, cls).resource_cleanup()
-
-    @classmethod
-    def _delete_domain(cls, domain_id):
-        # It is necessary to disable the domain before deleting,
-        # or else it would result in unauthorized error
-        cls.domains_client.update_domain(domain_id, enabled=False)
-        cls.domains_client.delete_domain(domain_id)
 
     @decorators.idempotent_id('8cf516ef-2114-48f1-907b-d32726c734d4')
     def test_list_domains(self):
@@ -92,7 +80,7 @@ class DomainsTestJSON(base.BaseIdentityV3AdminTest):
         domain = self.domains_client.create_domain(
             name=d_name, description=d_desc)['domain']
         self.addCleanup(test_utils.call_and_ignore_notfound_exc,
-                        self._delete_domain, domain['id'])
+                        self.delete_domain, domain['id'])
         self.assertIn('description', domain)
         self.assertIn('name', domain)
         self.assertIn('enabled', domain)
@@ -128,6 +116,26 @@ class DomainsTestJSON(base.BaseIdentityV3AdminTest):
         domains_list = [d['id'] for d in body]
         self.assertNotIn(domain['id'], domains_list)
 
+    @decorators.idempotent_id('d8d318b7-d1b3-4c37-94c5-3c5ba0b121ea')
+    def test_domain_delete_cascades_content(self):
+        # Create a domain with a user and a group in it
+        domain = self.setup_test_domain()
+        user = self.create_test_user(domain_id=domain['id'])
+        group = self.groups_client.create_group(
+            name=data_utils.rand_name('group'),
+            domain_id=domain['id'])['group']
+        self.addCleanup(test_utils.call_and_ignore_notfound_exc,
+                        self.groups_client.delete_group, group['id'])
+        # Delete the domain
+        self.delete_domain(domain['id'])
+        # Check the domain, its users and groups are gone
+        self.assertRaises(exceptions.NotFound,
+                          self.domains_client.show_domain, domain['id'])
+        self.assertRaises(exceptions.NotFound,
+                          self.users_client.show_user, user['id'])
+        self.assertRaises(exceptions.NotFound,
+                          self.groups_client.show_group, group['id'])
+
     @decorators.idempotent_id('036df86e-bb5d-42c0-a7c2-66b9db3a6046')
     def test_create_domain_with_disabled_status(self):
         # Create domain with enabled status as false
@@ -145,7 +153,7 @@ class DomainsTestJSON(base.BaseIdentityV3AdminTest):
         # Create domain only with name
         d_name = data_utils.rand_name('domain')
         domain = self.domains_client.create_domain(name=d_name)['domain']
-        self.addCleanup(self._delete_domain, domain['id'])
+        self.addCleanup(self.delete_domain, domain['id'])
         expected_data = {'name': d_name, 'enabled': True}
         self.assertEqual('', domain['description'])
         self.assertDictContainsSubset(expected_data, domain)

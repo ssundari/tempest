@@ -15,15 +15,12 @@
 
 from __future__ import print_function
 
-import functools
 import os
 import tempfile
 
-import debtcollector.removals
 from oslo_concurrency import lockutils
 from oslo_config import cfg
 from oslo_log import log as logging
-import testtools
 
 from tempest.lib import exceptions
 from tempest.lib.services import clients
@@ -68,9 +65,7 @@ AuthGroup = [
                 deprecated_opts=[cfg.DeprecatedOpt('allow_tenant_isolation',
                                                    group='auth'),
                                  cfg.DeprecatedOpt('allow_tenant_isolation',
-                                                   group='compute'),
-                                 cfg.DeprecatedOpt('allow_tenant_isolation',
-                                                   group='orchestration')]),
+                                                   group='compute')]),
     cfg.ListOpt('tempest_roles',
                 help="Roles to assign to all users created by tempest",
                 default=[]),
@@ -109,6 +104,7 @@ AuthGroup = [
                secret=True,
                deprecated_group='identity'),
     cfg.StrOpt('admin_domain_name',
+               default='Default',
                help="Admin domain name for authentication (Keystone V3)."
                     "The same domain applies to user and project",
                deprecated_group='identity'),
@@ -197,6 +193,8 @@ ServiceClientsGroup = [
                default=60,
                help='Timeout in seconds to wait for the http request to '
                     'return'),
+    cfg.StrOpt('proxy_url',
+               help='Specify an http proxy to use.')
 ]
 
 identity_feature_group = cfg.OptGroup(name='identity-feature-enabled',
@@ -208,8 +206,14 @@ IdentityFeatureGroup = [
                 help='Does the identity service have delegation and '
                      'impersonation enabled'),
     cfg.BoolOpt('api_v2',
-                default=True,
-                help='Is the v2 identity API enabled'),
+                default=False,
+                help='Is the v2 identity API enabled',
+                deprecated_for_removal=True,
+                deprecated_reason='The identity v2.0 API was removed in the '
+                                  'Queens release. Tests that exercise the '
+                                  'v2.0 API will be removed from tempest in '
+                                  'the v22.0.0 release. They are kept only to '
+                                  'test stable branches.'),
     cfg.BoolOpt('api_v2_admin',
                 default=True,
                 help="Is the v2 identity admin API available? This setting "
@@ -222,22 +226,27 @@ IdentityFeatureGroup = [
                 help="A list of enabled identity extensions with a special "
                      "entry all which indicates every extension is enabled. "
                      "Empty list indicates all extensions are disabled. "
-                     "To get the list of extensions run: 'keystone discover'"),
-    # TODO(rodrigods): This is a feature flag for bug 1590578 which is fixed
-    # in Newton and Ocata. This option can be removed after Mitaka is end of
-    # life.
-    cfg.BoolOpt('forbid_global_implied_dsr',
+                     "To get the list of extensions run: "
+                     "'openstack extension list --identity'"),
+    cfg.BoolOpt('domain_specific_drivers',
                 default=False,
-                help='Does the environment forbid global roles implying '
-                     'domain specific ones?',
-                deprecated_for_removal=True,
-                deprecated_reason="This feature flag was introduced to "
-                                  "support testing of old OpenStack versions, "
-                                  "which are not supported anymore"),
+                help='Are domain specific drivers enabled? '
+                     'This configuration value should be same as '
+                     '[identity]->domain_specific_drivers_enabled '
+                     'in keystone.conf.'),
     cfg.BoolOpt('security_compliance',
                 default=False,
                 help='Does the environment have the security compliance '
-                     'settings enabled?')
+                     'settings enabled?'),
+    cfg.BoolOpt('project_tags',
+                default=False,
+                help='Is the project tags identity v3 API available?'),
+    # Application credentials is a default feature in Queens. This config
+    # option can removed once Pike is EOL.
+    cfg.BoolOpt('application_credentials',
+                default=False,
+                help='Does the environment have application credentials '
+                     'enabled?')
 ]
 
 compute_group = cfg.OptGroup(name='compute',
@@ -300,9 +309,9 @@ ComputeGroup = [
                default=0,
                help='Time in seconds before a shelved instance is eligible '
                     'for removing from a host.  -1 never offload, 0 offload '
-                    'when shelved. This time should be the same as the time '
-                    'of nova.conf, and some tests will run for as long as the '
-                    'time.'),
+                    'when shelved. This configuration value should be same as '
+                    '[nova.DEFAULT]->shelved_offload_time in nova.conf, and '
+                    'some tests will run for as long as the time.'),
     cfg.IntOpt('min_compute_nodes',
                default=1,
                help=('The minimum number of compute nodes expected. This will '
@@ -404,6 +413,10 @@ ComputeFeaturesGroup = [
                 default=False,
                 help='Enable VNC console. This configuration value should '
                      'be same as [nova.vnc]->vnc_enabled in nova.conf'),
+    cfg.StrOpt('vnc_server_header',
+               default='WebSockify',
+               help='Expected VNC server name (WebSockify, nginx, etc) '
+                    'in response header.'),
     cfg.BoolOpt('spice_console',
                 default=False,
                 help='Enable Spice console. This configuration value should '
@@ -472,6 +485,15 @@ ComputeFeaturesGroup = [
                 default=False,
                 help='Does the test environment support in-place swapping of '
                      'volumes attached to a server instance?'),
+    cfg.BoolOpt('volume_backed_live_migration',
+                default=False,
+                help='Does the test environment support volume-backed live '
+                     'migration?'),
+    cfg.BoolOpt('volume_multiattach',
+                default=False,
+                help='Does the test environment support attaching a volume to '
+                     'more than one instance? This depends on hypervisor and '
+                     'volume backend/type and compute API version 2.60.'),
 ]
 
 
@@ -536,13 +558,6 @@ ImageFeaturesGroup = [
                                   'are current one. In future, Tempest will '
                                   'test v2 APIs only so this config option '
                                   'will be removed.'),
-    cfg.BoolOpt('deactivate_image',
-                default=False,
-                help="Is the deactivate-image feature enabled."
-                     " The feature has been integrated since Kilo.",
-                deprecated_for_removal=True,
-                deprecated_reason="All supported versions of OpenStack now "
-                                  "support the 'deactivate_image' feature"),
 ]
 
 network_group = cfg.OptGroup(name='network',
@@ -607,10 +622,14 @@ NetworkGroup = [
                      " for subnet creation"),
     cfg.StrOpt('port_vnic_type',
                choices=[None, 'normal', 'direct', 'macvtap'],
-               help="vnic_type to use when Launching instances"
+               help="vnic_type to use when launching instances"
                     " with pre-configured ports."
                     " Supported ports are:"
                     " ['normal','direct','macvtap']"),
+    cfg.DictOpt('port_profile',
+                default={},
+                help="port profile to use when launching instances"
+                     " with pre-configured ports."),
     cfg.ListOpt('default_network',
                 default=["1.0.0.0/16", "2.0.0.0/16"],
                 help="List of ip pools"
@@ -733,7 +752,7 @@ VolumeGroup = [
                help='Timeout in seconds to wait for a volume to become '
                     'available.'),
     cfg.StrOpt('catalog_type',
-               default='volume',
+               default='volumev3',
                help="Catalog type of the Volume Service"),
     cfg.StrOpt('region',
                default='',
@@ -833,7 +852,14 @@ VolumeFeaturesGroup = [
                 help="Is the v2 volume API enabled"),
     cfg.BoolOpt('api_v3',
                 default=True,
-                help="Is the v3 volume API enabled")
+                help="Is the v3 volume API enabled"),
+    cfg.BoolOpt('extend_attached_volume',
+                default=False,
+                help='Does the cloud support extending the size of a volume '
+                     'which is currently attached to a server instance? This '
+                     'depends on the 3.42 volume API microversion and the '
+                     '2.51 compute API microversion. Also, not all volume or '
+                     'compute backends support this operation.')
 ]
 
 
@@ -904,66 +930,6 @@ ObjectStoreFeaturesGroup = [
                 help="Execute discoverability tests"),
 ]
 
-orchestration_group = cfg.OptGroup(name='orchestration',
-                                   title='Orchestration Service Options')
-
-OrchestrationGroup = [
-    cfg.StrOpt('catalog_type',
-               default='orchestration',
-               help="Catalog type of the Orchestration service.",
-               deprecated_for_removal=True,
-               deprecated_reason='Heat support will be removed from Tempest'),
-    cfg.StrOpt('region',
-               default='',
-               help="The orchestration region name to use. If empty, the "
-                    "value of identity.region is used instead. If no such "
-                    "region is found in the service catalog, the first found "
-                    "one is used.",
-               deprecated_for_removal=True,
-               deprecated_reason='Heat support will be removed from Tempest'),
-    cfg.StrOpt('endpoint_type',
-               default='publicURL',
-               choices=['public', 'admin', 'internal',
-                        'publicURL', 'adminURL', 'internalURL'],
-               help="The endpoint type to use for the orchestration service.",
-               deprecated_for_removal=True,
-               deprecated_reason='Heat support will be removed from Tempest'),
-    cfg.StrOpt('stack_owner_role', default='heat_stack_owner',
-               help='Role required for users to be able to manage stacks',
-               deprecated_for_removal=True,
-               deprecated_reason='Heat support will be removed from Tempest'),
-    cfg.IntOpt('build_interval',
-               default=1,
-               help="Time in seconds between build status checks.",
-               deprecated_for_removal=True,
-               deprecated_reason='Heat support will be removed from Tempest'),
-    cfg.IntOpt('build_timeout',
-               default=1200,
-               help="Timeout in seconds to wait for a stack to build.",
-               deprecated_for_removal=True,
-               deprecated_reason='Heat support will be removed from Tempest'),
-    cfg.StrOpt('instance_type',
-               default='m1.micro',
-               help="Instance type for tests. Needs to be big enough for a "
-                    "full OS plus the test workload",
-               deprecated_for_removal=True,
-               deprecated_reason='Heat support will be removed from Tempest'),
-    cfg.StrOpt('keypair_name',
-               help="Name of existing keypair to launch servers with.",
-               deprecated_for_removal=True,
-               deprecated_reason='Heat support will be removed from Tempest'),
-    cfg.IntOpt('max_template_size',
-               default=524288,
-               help="Value must match heat configuration of the same name.",
-               deprecated_for_removal=True,
-               deprecated_reason='Heat support will be removed from Tempest'),
-    cfg.IntOpt('max_resources_per_stack',
-               default=1000,
-               help="Value must match heat configuration of the same name.",
-               deprecated_for_removal=True,
-               deprecated_reason='Heat support will be removed from Tempest'),
-]
-
 
 scenario_group = cfg.OptGroup(name='scenario', title='Scenario Test Options')
 
@@ -1025,11 +991,6 @@ ServiceAvailableGroup = [
     cfg.BoolOpt('nova',
                 default=True,
                 help="Whether or not nova is expected to be available"),
-    cfg.BoolOpt('heat',
-                default=False,
-                help="Whether or not Heat is expected to be available",
-                deprecated_for_removal=True,
-                deprecated_reason='Heat support will be removed from Tempest'),
 ]
 
 debug_group = cfg.OptGroup(name="debug",
@@ -1059,17 +1020,6 @@ specify .* as the regex.
 ]
 
 DefaultGroup = [
-    cfg.StrOpt('resources_prefix',
-               default='tempest',
-               help="Prefix to be added when generating the name for "
-                    "test resources. It can be used to discover all "
-                    "resources associated with a specific test run when "
-                    "running tempest on a real-life cloud",
-               deprecated_for_removal=True,
-               deprecated_reason="It is enough to add 'tempest' as this "
-                                 "prefix to ideintify resources which are "
-                                 "created by Tempest and no projects set "
-                                 "this option on OpenStack dev community."),
     cfg.BoolOpt('pause_teardown',
                 default=False,
                 help="""Whether to pause a test in global teardown.
@@ -1097,7 +1047,6 @@ _opts = [
     (volume_feature_group, VolumeFeaturesGroup),
     (object_storage_group, ObjectStoreGroup),
     (object_storage_feature_group, ObjectStoreFeaturesGroup),
-    (orchestration_group, OrchestrationGroup),
     (scenario_group, ScenarioGroup),
     (service_available_group, ServiceAvailableGroup),
     (debug_group, DebugGroup),
@@ -1129,7 +1078,7 @@ def list_opts():
     return opt_list
 
 
-# this should never be called outside of this class
+# This should never be called outside of this module
 class TempestConfigPrivate(object):
     """Provides OpenStack configuration information."""
 
@@ -1164,7 +1113,6 @@ class TempestConfigPrivate(object):
         self.object_storage = _CONF['object-storage']
         self.object_storage_feature_enabled = _CONF[
             'object-storage-feature-enabled']
-        self.orchestration = _CONF.orchestration
         self.scenario = _CONF.scenario
         self.service_available = _CONF.service_available
         self.debug = _CONF.debug
@@ -1278,79 +1226,6 @@ class TempestConfigProxy(object):
 CONF = TempestConfigProxy()
 
 
-@debtcollector.removals.remove(
-    message='use testtools.skipUnless instead', removal_version='Queens')
-def skip_unless_config(*args):
-    """Decorator to raise a skip if a config opt doesn't exist or is False
-
-    :param str group: The first arg, the option group to check
-    :param str name: The second arg, the option name to check
-    :param str msg: Optional third arg, the skip msg to use if a skip is raised
-    :raises testtools.TestCaseskipException: If the specified config option
-        doesn't exist or it exists and evaluates to False
-    """
-    def decorator(f):
-        group = args[0]
-        name = args[1]
-
-        @functools.wraps(f)
-        def wrapper(self, *func_args, **func_kwargs):
-            if not hasattr(CONF, group):
-                msg = "Config group %s doesn't exist" % group
-                raise testtools.TestCase.skipException(msg)
-
-            conf_group = getattr(CONF, group)
-            if not hasattr(conf_group, name):
-                msg = "Config option %s.%s doesn't exist" % (group,
-                                                             name)
-                raise testtools.TestCase.skipException(msg)
-
-            value = getattr(conf_group, name)
-            if not value:
-                if len(args) == 3:
-                    msg = args[2]
-                else:
-                    msg = "Config option %s.%s is false" % (group,
-                                                            name)
-                raise testtools.TestCase.skipException(msg)
-            return f(self, *func_args, **func_kwargs)
-        return wrapper
-    return decorator
-
-
-@debtcollector.removals.remove(
-    message='use testtools.skipIf instead', removal_version='Queens')
-def skip_if_config(*args):
-    """Raise a skipException if a config exists and is True
-
-    :param str group: The first arg, the option group to check
-    :param str name: The second arg, the option name to check
-    :param str msg: Optional third arg, the skip msg to use if a skip is raised
-    :raises testtools.TestCase.skipException: If the specified config option
-        exists and evaluates to True
-    """
-    def decorator(f):
-        group = args[0]
-        name = args[1]
-
-        @functools.wraps(f)
-        def wrapper(self, *func_args, **func_kwargs):
-            if hasattr(CONF, group):
-                conf_group = getattr(CONF, group)
-                if hasattr(conf_group, name):
-                    value = getattr(conf_group, name)
-                    if value:
-                        if len(args) == 3:
-                            msg = args[2]
-                        else:
-                            msg = "Config option %s.%s is false" % (group,
-                                                                    name)
-                        raise testtools.TestCase.skipException(msg)
-            return f(self, *func_args, **func_kwargs)
-        return wrapper
-    return decorator
-
-
 def service_client_config(service_client_name=None):
     """Return a dict with the parameters to init service clients
 
@@ -1371,6 +1246,7 @@ def service_client_config(service_client_name=None):
         * `ca_certs`
         * `trace_requests`
         * `http_timeout`
+        * `proxy_url`
 
     The dict returned by this does not fit a few service clients:
 
@@ -1393,7 +1269,8 @@ def service_client_config(service_client_name=None):
             CONF.identity.disable_ssl_certificate_validation,
         'ca_certs': CONF.identity.ca_certificates_file,
         'trace_requests': CONF.debug.trace_requests,
-        'http_timeout': CONF.service_clients.http_timeout
+        'http_timeout': CONF.service_clients.http_timeout,
+        'proxy_url': CONF.service_clients.proxy_url,
     }
 
     if service_client_name is None:
@@ -1447,7 +1324,7 @@ def _register_tempest_service_clients():
         module = service_clients[service_client]
         configs = service_client.split('.')[0]
         service_client_data = dict(
-            name=service_client.replace('.', '_'),
+            name=service_client.replace('.', '_').replace('-', '_'),
             service_version=service_client,
             module_path=module.__name__,
             client_names=module.__all__,

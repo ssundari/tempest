@@ -16,11 +16,11 @@
 import netaddr
 
 from tempest.api.compute import base
+from tempest.common import utils
 from tempest import config
 from tempest.lib.common.utils import test_utils
 from tempest.lib import decorators
 from tempest.lib import exceptions
-from tempest import test
 
 CONF = config.CONF
 
@@ -31,6 +31,7 @@ class FloatingIPsBulkAdminTestJSON(base.BaseV2ComputeAdminTest):
     API documentation - http://docs.openstack.org/api/openstack-compute/2/
     content/ext-os-floating-ips-bulk.html
     """
+    max_microversion = '2.35'
 
     @classmethod
     def setup_clients(cls):
@@ -57,7 +58,7 @@ class FloatingIPsBulkAdminTestJSON(base.BaseV2ComputeAdminTest):
         return
 
     @decorators.idempotent_id('2c8f145f-8012-4cb8-ac7e-95a587f0e4ab')
-    @test.services('network')
+    @utils.services('network')
     def test_create_list_delete_floating_ips_bulk(self):
         # Create, List  and delete the Floating IPs Bulk
         pool = 'test_pool'

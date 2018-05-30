@@ -29,6 +29,8 @@ others are not. A list of stable APIs available to plugins is provided below:
 * tempest.config
 * tempest.test_discover.plugins
 * tempest.common.credentials_factory
+* tempest.clients
+* tempest.test
 
 If there is an interface from tempest that you need to rely on in your plugin
 which is not listed above, it likely needs to be migrated to tempest.lib. In
@@ -130,7 +132,7 @@ Abstract Plugin Class
 
 Plugin Structure
 ================
-While there are no hard and fast rules for the structure a plugin, there are
+While there are no hard and fast rules for the structure of a plugin, there are
 basically no constraints on what the plugin looks like as long as the 2 steps
 above are done. However,  there are some recommended patterns to follow to make
 it easy for people to contribute and work with your plugin. For example, if you

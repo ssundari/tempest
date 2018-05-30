@@ -13,10 +13,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from tempest.common import utils
 from tempest import config
 from tempest.lib import decorators
 from tempest.scenario import manager
-from tempest import test
 
 CONF = config.CONF
 
@@ -54,20 +54,18 @@ class TestEncryptedCinderVolumes(manager.EncryptionScenarioTest):
 
     @decorators.idempotent_id('79165fb4-5534-4b9d-8429-97ccffb8f86e')
     @decorators.attr(type='slow')
-    @test.services('compute', 'volume', 'image')
+    @utils.services('compute', 'volume', 'image')
     def test_encrypted_cinder_volumes_luks(self):
         server = self.launch_instance()
-        volume = self.create_encrypted_volume('nova.volume.encryptors.'
-                                              'luks.LuksEncryptor',
+        volume = self.create_encrypted_volume('luks',
                                               volume_type='luks')
         self.attach_detach_volume(server, volume)
 
     @decorators.idempotent_id('cbc752ed-b716-4717-910f-956cce965722')
     @decorators.attr(type='slow')
-    @test.services('compute', 'volume', 'image')
+    @utils.services('compute', 'volume', 'image')
     def test_encrypted_cinder_volumes_cryptsetup(self):
         server = self.launch_instance()
-        volume = self.create_encrypted_volume('nova.volume.encryptors.'
-                                              'cryptsetup.CryptsetupEncryptor',
+        volume = self.create_encrypted_volume('plain',
                                               volume_type='cryptsetup')
         self.attach_detach_volume(server, volume)

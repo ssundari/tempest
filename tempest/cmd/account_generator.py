@@ -15,18 +15,18 @@
 #    under the License.
 
 """
-Utility for creating **accounts.yaml** file for concurrent test runs.
+Utility for creating ``accounts.yaml`` file for concurrent test runs.
 Creates one primary user, one alt user, one swift admin, one stack owner
 and one admin (optionally) for each concurrent thread. The utility creates
-user for each tenant. The **accounts.yaml** file will be valid and contain
+user for each tenant. The ``accounts.yaml`` file will be valid and contain
 credentials for created users, so each user will be in separate tenant and
 have the username, tenant_name, password and roles.
 
-**Usage:** ``tempest account-generator [-h] [OPTIONS] accounts_file.yaml``.
+**Usage:** ``tempest account-generator [-h] [OPTIONS] accounts_file.yaml``
 
 Positional Arguments
 --------------------
-**accounts_file.yaml** (Required) Provide an output accounts yaml file. Utility
+``accounts_file.yaml`` (Required) Provide an output accounts yaml file. Utility
 creates a .yaml file in the directory where the command is ran. The appropriate
 name for the file is *accounts.yaml* and it should be placed in *tempest/etc*
 directory.
@@ -40,55 +40,62 @@ through CLI options or environment variables.
 
 You're probably familiar with these, but just to remind:
 
-======== ======================== ====================
-Param    CLI                      Environment Variable
-======== ======================== ====================
-Username --os-username            OS_USERNAME
-Password --os-password            OS_PASSWORD
-Project  --os-project-name        OS_PROJECT_NAME
-Tenant   --os-tenant-name (depr.) OS_TENANT_NAME
-Domain   --os-domain-name         OS_DOMAIN_NAME
-======== ======================== ====================
+======== ============================ ====================
+Param    CLI                          Environment Variable
+======== ============================ ====================
+Username ``--os-username``            OS_USERNAME
+Password ``--os-password``            OS_PASSWORD
+Project  ``--os-project-name``        OS_PROJECT_NAME
+Tenant   ``--os-tenant-name`` (depr.) OS_TENANT_NAME
+Domain   ``--os-domain-name``         OS_DOMAIN_NAME
+======== ============================ ====================
 
 Optional Arguments
 ------------------
-**-h**, **--help** (Optional) Shows help message with the description of
-utility and its arguments, and exits.
+* ``-h, --help`` (Optional) Shows help message with the description of
+  utility and its arguments, and exits.
 
-**c /etc/tempest.conf**, **--config-file /etc/tempest.conf** (Optional) Path to
-tempest config file.
+* ``-c, --config-file /etc/tempest.conf`` (Optional) Path
+  to tempest config file. If not specified, it searches for tempest.conf in
+  these locations:
 
-**--os-username <auth-user-name>** (Optional) Name used for authentication with
-the OpenStack Identity service. Defaults to env[OS_USERNAME]. Note: User should
-have permissions to create new user accounts and tenants.
+  - ./etc/
+  - /etc/tempest
+  - ~/.tempest/
+  - ~/
+  - /etc/
 
-**--os-password <auth-password>** (Optional) Password used for authentication
-with the OpenStack Identity service. Defaults to env[OS_PASSWORD].
+* ``--os-username <auth-user-name>`` (Optional) Name used for authentication
+  with the OpenStack Identity service. Defaults to env[OS_USERNAME]. Note: User
+  should have permissions to create new user accounts and tenants.
 
-**--os-project-name <auth-project-name>** (Optional) Project to request
-authorization on. Defaults to env[OS_PROJECT_NAME].
+* ``--os-password <auth-password>`` (Optional) Password used for authentication
+  with the OpenStack Identity service. Defaults to env[OS_PASSWORD].
 
-**--os-tenant-name <auth-tenant-name>** (Optional, deprecated) Tenant to
-request authorization on. Defaults to env[OS_TENANT_NAME].
+* ``--os-project-name <auth-project-name>`` (Optional) Project to request
+  authorization on. Defaults to env[OS_PROJECT_NAME].
 
-**--os-domain-name <auth-domain-name>** (Optional) Domain the user and project
-belong to. Defaults to env[OS_DOMAIN_NAME].
+* ``--os-tenant-name <auth-tenant-name>`` (Optional, deprecated) Tenant to
+  request authorization on. Defaults to env[OS_TENANT_NAME].
 
-**--tag TAG** (Optional) Resources tag. Each created resource (user, project)
-will have the prefix with the given TAG in its name. Using tag is recommended
-for the further using, cleaning resources.
+* ``--os-domain-name <auth-domain-name>`` (Optional) Domain the user and
+  project belong to. Defaults to env[OS_DOMAIN_NAME].
 
-**-r CONCURRENCY**, **--concurrency CONCURRENCY** (Required) Concurrency count
-(default: 1). The number of accounts required can be estimated as
-CONCURRENCY x 2. Each user provided in *accounts.yaml* file will be in
-a different tenant. This is required to provide isolation between test for
-running in parallel.
+* ``--tag TAG`` (Optional) Resources tag. Each created resource (user, project)
+  will have the prefix with the given TAG in its name. Using tag is recommended
+  for the further using, cleaning resources.
 
-**--with-admin** (Optional) Creates admin for each concurrent group
-(default: False).
+* ``-r, --concurrency CONCURRENCY`` (Optional) Concurrency count
+  (default: 1). The number of accounts required can be estimated as
+  CONCURRENCY x 2. Each user provided in *accounts.yaml* file will be in
+  a different tenant. This is required to provide isolation between test for
+  running in parallel.
 
-**-i VERSION**, **--identity-version VERSION** (Optional) Provisions accounts
-using the specified version of the identity API. (default: '3').
+* ``--with-admin`` (Optional) Creates admin for each concurrent group
+  (default: False).
+
+* ``-i, --identity-version VERSION`` (Optional) Provisions accounts
+  using the specified version of the identity API. (default: '3').
 
 To see help on specific argument, please do: ``tempest account-generator
 [OPTIONS] <accounts_file.yaml> -h``.
@@ -155,9 +162,7 @@ def generate_resources(cred_provider, admin):
     if CONF.service_available.swift:
         spec.append([CONF.object_storage.operator_role])
         spec.append([CONF.object_storage.reseller_admin_role])
-    if CONF.service_available.heat:
-        spec.append([CONF.orchestration.stack_owner_role,
-                     CONF.object_storage.operator_role])
+        spec.append([CONF.object_storage.operator_role])
     if admin:
         spec.append('admin')
     resources = []

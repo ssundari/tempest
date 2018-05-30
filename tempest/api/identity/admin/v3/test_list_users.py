@@ -14,8 +14,11 @@
 #    under the License.
 
 from tempest.api.identity import base
+from tempest import config
 from tempest.lib.common.utils import data_utils
 from tempest.lib import decorators
+
+CONF = config.CONF
 
 
 class UsersV3TestJSON(base.BaseIdentityV3AdminTest):
@@ -44,23 +47,17 @@ class UsersV3TestJSON(base.BaseIdentityV3AdminTest):
         cls.domain_enabled_user = cls.users_client.create_user(
             name=u1_name, password=alt_password,
             email=cls.alt_email, domain_id=cls.domain['id'])['user']
+        cls.addClassResourceCleanup(cls.users_client.delete_user,
+                                    cls.domain_enabled_user['id'])
         cls.users.append(cls.domain_enabled_user)
         # Create default not enabled user
         u2_name = data_utils.rand_name('test_user')
         cls.non_domain_enabled_user = cls.users_client.create_user(
             name=u2_name, password=alt_password,
             email=cls.alt_email, enabled=False)['user']
+        cls.addClassResourceCleanup(cls.users_client.delete_user,
+                                    cls.non_domain_enabled_user['id'])
         cls.users.append(cls.non_domain_enabled_user)
-
-    @classmethod
-    def resource_cleanup(cls):
-        # Cleanup the users created during setup
-        for user in cls.users:
-            cls.users_client.delete_user(user['id'])
-        # Cleanup the domain created during setup
-        cls.domains_client.update_domain(cls.domain['id'], enabled=False)
-        cls.domains_client.delete_domain(cls.domain['id'])
-        super(UsersV3TestJSON, cls).resource_cleanup()
 
     @decorators.idempotent_id('08f9aabb-dcfe-41d0-8172-82b5fa0bd73d')
     def test_list_user_domains(self):
@@ -82,6 +79,11 @@ class UsersV3TestJSON(base.BaseIdentityV3AdminTest):
     def test_list_users_with_name(self):
         # List users with name
         params = {'name': self.domain_enabled_user['name']}
+        # When domain specific drivers are enabled the operations
+        # of listing all users and listing all groups are not supported,
+        # they need a domain filter to be specified
+        if CONF.identity_feature_enabled.domain_specific_drivers:
+            params['domain_id'] = self.domain_enabled_user['domain_id']
         self._list_users_with_params(params, 'name',
                                      self.domain_enabled_user,
                                      self.non_domain_enabled_user)
@@ -89,7 +91,18 @@ class UsersV3TestJSON(base.BaseIdentityV3AdminTest):
     @decorators.idempotent_id('b30d4651-a2ea-4666-8551-0c0e49692635')
     def test_list_users(self):
         # List users
-        body = self.users_client.list_users()['users']
+        # When domain specific drivers are enabled the operations
+        # of listing all users and listing all groups are not supported,
+        # they need a domain filter to be specified
+        if CONF.identity_feature_enabled.domain_specific_drivers:
+            body_enabled_user = self.users_client.list_users(
+                domain_id=self.domain_enabled_user['domain_id'])['users']
+            body_non_enabled_user = self.users_client.list_users(
+                domain_id=self.non_domain_enabled_user['domain_id'])['users']
+            body = (body_enabled_user + body_non_enabled_user)
+        else:
+            body = self.users_client.list_users()['users']
+
         fetched_ids = [u['id'] for u in body]
         missing_users = [u['id'] for u in self.users
                          if u['id'] not in fetched_ids]

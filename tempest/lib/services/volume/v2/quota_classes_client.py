@@ -12,38 +12,11 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+from debtcollector import moves
 
-from oslo_serialization import jsonutils as json
-
-from tempest.lib.common import rest_client
+from tempest.lib.services.volume.v3 import quota_classes_client
 
 
-class QuotaClassesClient(rest_client.RestClient):
-    """Volume quota class V2 client."""
-
-    api_version = "v2"
-
-    def show_quota_class_set(self, quota_class_id):
-        """List quotas for a quota class.
-
-        TODO: Current api-site doesn't contain this API description.
-        LP: https://bugs.launchpad.net/nova/+bug/1602400
-        """
-        url = 'os-quota-class-sets/%s' % quota_class_id
-        resp, body = self.get(url)
-        self.expected_success(200, resp.status)
-        body = json.loads(body)
-        return rest_client.ResponseBody(resp, body)
-
-    def update_quota_class_set(self, quota_class_id, **kwargs):
-        """Update quotas for a quota class.
-
-        TODO: Current api-site doesn't contain this API description.
-        LP: https://bugs.launchpad.net/nova/+bug/1602400
-        """
-        url = 'os-quota-class-sets/%s' % quota_class_id
-        put_body = json.dumps({'quota_class_set': kwargs})
-        resp, body = self.put(url, put_body)
-        self.expected_success(200, resp.status)
-        body = json.loads(body)
-        return rest_client.ResponseBody(resp, body)
+QuotaClassesClient = moves.moved_class(
+    quota_classes_client.QuotaClassesClient, 'QuotaClassesClient',
+    __name__, version="Rocky", removal_version='?')

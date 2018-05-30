@@ -18,8 +18,6 @@ import random
 
 import six
 
-import testtools
-
 from oslo_log import log as logging
 from tempest.api.image import base
 from tempest import config
@@ -73,8 +71,12 @@ class BasicOperationsImagesTest(base.BaseV2ImageTest):
         self.assertEqual(1024, body.get('size'))
 
         # Now try get image file
+        # NOTE: This Glance API returns different status codes for image
+        # condition. In this non-empty data case, Glance should return 200,
+        # so here should check the status code.
         body = self.client.show_image_file(image['id'])
         self.assertEqual(file_content, body.data)
+        self.assertEqual(200, body.response.status)
 
     @decorators.attr(type='smoke')
     @decorators.idempotent_id('f848bb94-1c6e-45a4-8726-39e3a5b23535')
@@ -113,13 +115,20 @@ class BasicOperationsImagesTest(base.BaseV2ImageTest):
                                   visibility='private')
         self.assertEqual('queued', image['status'])
 
+        # NOTE: This Glance API returns different status codes for image
+        # condition. In this empty data case, Glance should return 204,
+        # so here should check the status code.
+        image_file = self.client.show_image_file(image['id'])
+        self.assertEqual(0, len(image_file.data))
+        self.assertEqual(204, image_file.response.status)
+
         # Now try uploading an image file
         image_file = six.BytesIO(data_utils.random_bytes())
         self.client.store_image_file(image['id'], image_file)
 
         # Update Image
         new_image_name = data_utils.rand_name('new-image')
-        body = self.client.update_image(image['id'], [
+        self.client.update_image(image['id'], [
             dict(replace='/name', value=new_image_name)])
 
         # Verifying updating
@@ -128,8 +137,6 @@ class BasicOperationsImagesTest(base.BaseV2ImageTest):
         self.assertEqual(image['id'], body['id'])
         self.assertEqual(new_image_name, body['name'])
 
-    @testtools.skipUnless(CONF.image_feature_enabled.deactivate_image,
-                          'deactivate-image is not available.')
     @decorators.idempotent_id('951ebe01-969f-4ea9-9898-8a3f1f442ab0')
     def test_deactivate_reactivate_image(self):
         # Create image

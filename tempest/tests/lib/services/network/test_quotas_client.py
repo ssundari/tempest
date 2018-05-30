@@ -38,7 +38,61 @@ class TestQuotasClient(base.BaseServiceTest):
         ]
     }
 
+    FAKE_PROJECT_QUOTAS = {
+        "quota": {
+            "floatingip": 50,
+            "network": 10,
+            "port": 50,
+            "rbac_policy": -1,
+            "router": 10,
+            "security_group": 10,
+            "security_group_rule": 100,
+            "subnet": 10,
+            "subnetpool": -1
+        }
+    }
+
     FAKE_QUOTA_TENANT_ID = "bab7d5c60cd041a0a36f7c4b6e1dd978"
+
+    FAKE_QUOTA_DETAILS = {
+        "quota": {
+            "rbac_policy": {
+                "used": 4,
+                "limit": 10,
+                "reserved": 0
+            },
+            "subnetpool": {
+                "used": 2,
+                "limit": -1,
+                "reserved": 0
+            },
+            "security_group_rule": {
+                "used": 10,
+                "limit": 100,
+                "reserved": 1
+            },
+            "security_group": {
+                "used": 3,
+                "limit": 10,
+                "reserved": 0
+            },
+            "subnet": {
+                "used": 3,
+                "limit": 100,
+                "reserved": 0
+            },
+            "port": {
+                "used": 21,
+                "limit": 500,
+                "reserved": 3
+            },
+            "network": {
+                "used": 9,
+                "limit": 100,
+                "reserved": 2
+            }
+        }
+    }
 
     def setUp(self):
         super(TestQuotasClient, self).setUp()
@@ -58,7 +112,16 @@ class TestQuotasClient(base.BaseServiceTest):
         self.check_service_client_function(
             self.quotas_client.show_quotas,
             "tempest.lib.common.rest_client.RestClient.get",
-            {"quota": self.FAKE_QUOTAS["quotas"][0]},
+            self.FAKE_PROJECT_QUOTAS,
+            bytes_body,
+            200,
+            tenant_id=self.FAKE_QUOTA_TENANT_ID)
+
+    def _test_show_default_quotas(self, bytes_body=False):
+        self.check_service_client_function(
+            self.quotas_client.show_default_quotas,
+            "tempest.lib.common.rest_client.RestClient.get",
+            self.FAKE_PROJECT_QUOTAS,
             bytes_body,
             200,
             tenant_id=self.FAKE_QUOTA_TENANT_ID)
@@ -67,7 +130,16 @@ class TestQuotasClient(base.BaseServiceTest):
         self.check_service_client_function(
             self.quotas_client.update_quotas,
             "tempest.lib.common.rest_client.RestClient.put",
-            {"quota": self.FAKE_QUOTAS["quotas"][0]},
+            self.FAKE_PROJECT_QUOTAS,
+            bytes_body,
+            200,
+            tenant_id=self.FAKE_QUOTA_TENANT_ID)
+
+    def _test_show_quota_details(self, bytes_body=False):
+        self.check_service_client_function(
+            self.quotas_client.show_quota_details,
+            "tempest.lib.common.rest_client.RestClient.get",
+            self.FAKE_QUOTA_DETAILS,
             bytes_body,
             200,
             tenant_id=self.FAKE_QUOTA_TENANT_ID)
@@ -92,8 +164,20 @@ class TestQuotasClient(base.BaseServiceTest):
     def test_show_quotas_with_bytes_body(self):
         self._test_show_quotas(bytes_body=True)
 
+    def test_show_default_quotas_with_str_body(self):
+        self._test_show_default_quotas()
+
+    def test_show_default_quotas_with_bytes_body(self):
+        self._test_show_default_quotas(bytes_body=True)
+
     def test_update_quotas_with_str_body(self):
         self._test_update_quotas()
 
     def test_update_quotas_with_bytes_body(self):
         self._test_update_quotas(bytes_body=True)
+
+    def test_show_quota_details_with_str_body(self):
+        self._test_show_quota_details()
+
+    def test_show_quota_details_with_bytes_body(self):
+        self._test_show_quota_details(bytes_body=True)

@@ -10,6 +10,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import functools
+import re
 import sys
 
 import netaddr
@@ -25,13 +27,14 @@ LOG = logging.getLogger(__name__)
 
 def debug_ssh(function):
     """Decorator to generate extra debug info in case off SSH failure"""
+    @functools.wraps(function)
     def wrapper(self, *args, **kwargs):
         try:
             return function(self, *args, **kwargs)
         except Exception as e:
             caller = test_utils.find_test_caller() or "not found"
             if not isinstance(e, tempest.lib.exceptions.SSHTimeout):
-                message = ('Initializing SSH connection to %(ip)s failed. '
+                message = ('Executing command on %(ip)s failed. '
                            'Error: %(error)s' % {'ip': self.ip_address,
                                                  'error': e})
                 message = '(%s) %s' % (caller, message)
@@ -67,7 +70,7 @@ class RemoteClient(object):
     def __init__(self, ip_address, username, password=None, pkey=None,
                  server=None, servers_client=None, ssh_timeout=300,
                  connect_timeout=60, console_output_enabled=True,
-                 ssh_shell_prologue="set -eu -o pipefail; PATH=$$PATH:/sbin;",
+                 ssh_shell_prologue="set -eu -o pipefail; PATH=$PATH:/sbin;",
                  ping_count=1, ping_size=56):
         """Executes commands in a VM over ssh
 
@@ -124,3 +127,27 @@ class RemoteClient(object):
             cmd = 'sudo {cmd} -I {nic}'.format(cmd=cmd, nic=nic)
         cmd += ' -c{0} -w{0} -s{1} {2}'.format(count, size, host)
         return self.exec_command(cmd)
+
+    def mount_config_drive(self):
+        """Mount the config drive inside a virtual machine
+
+        This method will not unmount the config drive, so unmount_config_drive
+        must be used for cleanup.
+        """
+        cmd_blkid = 'blkid | grep -i config-2'
+        result = self.exec_command(cmd_blkid)
+        dev_name = re.match('([^:]+)', result).group()
+
+        try:
+            self.exec_command('sudo mount %s /mnt' % dev_name)
+        except tempest.lib.exceptions.SSHExecCommandFailed:
+            # So the command failed, let's try to know why and print some
+            # useful information.
+            lsblk = self.exec_command('sudo lsblk --fs --ascii')
+            LOG.error("Mounting %s on /mnt failed. Right after the "
+                      "failure 'lsblk' in the guest reported:\n%s",
+                      dev_name, lsblk)
+            raise
+
+    def unmount_config_drive(self):
+        self.exec_command('sudo umount /mnt')

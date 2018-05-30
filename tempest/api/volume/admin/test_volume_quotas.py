@@ -13,12 +13,14 @@
 #    under the License.
 
 from tempest.api.volume import base
+from tempest.common import identity
 from tempest.common import tempest_fixtures as fixtures
 from tempest.common import waiters
 from tempest.lib.common.utils import data_utils
 from tempest.lib import decorators
 
-QUOTA_KEYS = ['gigabytes', 'snapshots', 'volumes', 'backups']
+QUOTA_KEYS = ['gigabytes', 'snapshots', 'volumes', 'backups',
+              'backup_gigabytes', 'per_volume_gigabytes']
 QUOTA_USAGE_KEYS = ['reserved', 'limit', 'in_use']
 
 
@@ -36,7 +38,6 @@ class BaseVolumeQuotasAdminTestJSON(base.BaseVolumeAdminTest):
     def setup_credentials(cls):
         super(BaseVolumeQuotasAdminTestJSON, cls).setup_credentials()
         cls.demo_tenant_id = cls.os_primary.credentials.tenant_id
-        cls.alt_client = cls.os_alt.volumes_client_latest
 
     @classmethod
     def setup_clients(cls):
@@ -66,7 +67,9 @@ class BaseVolumeQuotasAdminTestJSON(base.BaseVolumeAdminTest):
         new_quota_set = {'gigabytes': 1009,
                          'volumes': 11,
                          'snapshots': 11,
-                         'backups': 11}
+                         'backups': 11,
+                         'backup_gigabytes': 1009,
+                         'per_volume_gigabytes': 1009}
 
         # Update limits for all quota resources
         quota_set = self.admin_quotas_client.update_quota_set(
@@ -100,7 +103,7 @@ class BaseVolumeQuotasAdminTestJSON(base.BaseVolumeAdminTest):
 
         volume = self.create_volume()
         self.addCleanup(self.delete_volume,
-                        self.admin_volume_client, volume['id'])
+                        self.volumes_client, volume['id'])
 
         new_quota_usage = self.admin_quotas_client.show_quota_set(
             self.demo_tenant_id, params={'usage': True})['quota_set']
@@ -117,10 +120,11 @@ class BaseVolumeQuotasAdminTestJSON(base.BaseVolumeAdminTest):
         # Admin can delete the resource quota set for a project
         project_name = data_utils.rand_name('quota_tenant')
         description = data_utils.rand_name('desc_')
-        project = self.identity_utils.create_project(project_name,
-                                                     description=description)
+        project = identity.identity_utils(self.os_admin).create_project(
+            project_name, description=description)
         project_id = project['id']
-        self.addCleanup(self.identity_utils.delete_project, project_id)
+        self.addCleanup(identity.identity_utils(self.os_admin).delete_project,
+                        project_id)
         quota_set_default = self.admin_quotas_client.show_default_quota_set(
             project_id)['quota_set']
         volume_default = quota_set_default['volumes']
@@ -145,7 +149,8 @@ class BaseVolumeQuotasAdminTestJSON(base.BaseVolumeAdminTest):
             self.demo_tenant_id, params={'usage': True})['quota_set']
 
         alt_quota = self.admin_quotas_client.show_quota_set(
-            self.alt_client.tenant_id, params={'usage': True})['quota_set']
+            self.os_alt.volumes_client_latest.tenant_id,
+            params={'usage': True})['quota_set']
 
         # Creates a volume transfer
         transfer = self.transfer_client.create_volume_transfer(
@@ -159,14 +164,15 @@ class BaseVolumeQuotasAdminTestJSON(base.BaseVolumeAdminTest):
 
         # Verify volume transferred is available
         waiters.wait_for_volume_resource_status(
-            self.alt_client, volume['id'], 'available')
+            self.os_alt.volumes_client_latest, volume['id'], 'available')
 
         # List of tenants quota usage post transfer
         new_primary_quota = self.admin_quotas_client.show_quota_set(
             self.demo_tenant_id, params={'usage': True})['quota_set']
 
         new_alt_quota = self.admin_quotas_client.show_quota_set(
-            self.alt_client.tenant_id, params={'usage': True})['quota_set']
+            self.os_alt.volumes_client_latest.tenant_id,
+            params={'usage': True})['quota_set']
 
         # Verify tenants quota usage was updated
         self.assertEqual(primary_quota['volumes']['in_use'] -

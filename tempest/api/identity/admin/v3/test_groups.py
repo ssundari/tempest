@@ -14,8 +14,11 @@
 #    under the License.
 
 from tempest.api.identity import base
+from tempest import config
 from tempest.lib.common.utils import data_utils
 from tempest.lib import decorators
+
+CONF = config.CONF
 
 
 class GroupsV3TestJSON(base.BaseIdentityV3AdminTest):
@@ -24,13 +27,6 @@ class GroupsV3TestJSON(base.BaseIdentityV3AdminTest):
     def resource_setup(cls):
         super(GroupsV3TestJSON, cls).resource_setup()
         cls.domain = cls.create_domain()
-
-    @classmethod
-    def resource_cleanup(cls):
-        # Cleanup the domains created in the setup
-        cls.domains_client.update_domain(cls.domain['id'], enabled=False)
-        cls.domains_client.delete_domain(cls.domain['id'])
-        super(GroupsV3TestJSON, cls).resource_cleanup()
 
     @decorators.idempotent_id('2e80343b-6c81-4ac3-88c7-452f3e9d5129')
     def test_group_create_update_get(self):
@@ -130,7 +126,14 @@ class GroupsV3TestJSON(base.BaseIdentityV3AdminTest):
             self.addCleanup(self.groups_client.delete_group, group['id'])
             group_ids.append(group['id'])
         # List and Verify Groups
-        body = self.groups_client.list_groups()['groups']
+        # When domain specific drivers are enabled the operations
+        # of listing all users and listing all groups are not supported,
+        # they need a domain filter to be specified
+        if CONF.identity_feature_enabled.domain_specific_drivers:
+            body = self.groups_client.list_groups(
+                domain_id=self.domain['id'])['groups']
+        else:
+            body = self.groups_client.list_groups()['groups']
         for g in body:
             fetched_ids.append(g['id'])
         missing_groups = [g for g in group_ids if g not in fetched_ids]

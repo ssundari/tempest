@@ -76,7 +76,6 @@ from tempest.common import credentials_factory as credentials
 from tempest import config
 import tempest.lib.common.http
 from tempest.lib import exceptions as lib_exc
-from tempest.services import object_storage
 
 
 CONF = config.CONF
@@ -197,10 +196,6 @@ def _get_api_versions(os, service):
 def verify_keystone_api_versions(os, update):
     # Check keystone api versions
     versions = _get_api_versions(os, 'keystone')
-    if (CONF.identity_feature_enabled.api_v2 !=
-            contains_version('v2.', versions)):
-        print_and_or_update('api_v2', 'identity-feature-enabled',
-                            not CONF.identity_feature_enabled.api_v2, update)
     if (CONF.identity_feature_enabled.api_v3 !=
             contains_version('v3.', versions)):
         print_and_or_update('api_v3', 'identity-feature-enabled',
@@ -236,11 +231,10 @@ def verify_api_versions(os, service, update):
 
 
 def get_extension_client(os, service):
-    params = config.service_client_config('object-storage')
     extensions_client = {
         'nova': os.compute.ExtensionsClient(),
         'neutron': os.network.ExtensionsClient(),
-        'swift': object_storage.CapabilitiesClient(os.auth_provider, **params),
+        'swift': os.object_storage.CapabilitiesClient(),
         # NOTE: Cinder v3 API is current and v2 and v1 are deprecated.
         # V3 extension API is the same as v2, so we reuse the v2 client
         # for v3 API also.
@@ -355,7 +349,6 @@ def check_service_availability(os, update):
         'image': 'glance',
         'object_storage': 'swift',
         'compute': 'nova',
-        'orchestration': 'heat',
         'baremetal': 'ironic',
         'identity': 'keystone',
     }

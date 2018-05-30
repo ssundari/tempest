@@ -17,11 +17,11 @@ import testtools
 from testtools import matchers
 
 from tempest.api.volume import base
+from tempest.common import utils
 from tempest.common import waiters
 from tempest import config
 from tempest.lib.common.utils import data_utils
 from tempest.lib import decorators
-from tempest import test
 
 CONF = config.CONF
 
@@ -40,7 +40,7 @@ class VolumesBackupsTest(base.BaseVolumeTest):
             backup_id)['restore']
 
         # Delete backup
-        self.addCleanup(self.volumes_client.delete_volume,
+        self.addCleanup(self.delete_volume, self.volumes_client,
                         restored_volume['volume_id'])
         self.assertEqual(backup_id, restored_volume['backup_id'])
         waiters.wait_for_volume_resource_status(self.backups_client,
@@ -59,8 +59,7 @@ class VolumesBackupsTest(base.BaseVolumeTest):
                     "vol-meta2": "value2",
                     "vol-meta3": "value3"}
         volume = self.create_volume(metadata=metadata)
-        self.addCleanup(self.volumes_client.delete_volume,
-                        volume['id'])
+        self.addCleanup(self.delete_volume, self.volumes_client, volume['id'])
 
         # Create a backup
         backup_name = data_utils.rand_name(
@@ -83,6 +82,9 @@ class VolumesBackupsTest(base.BaseVolumeTest):
         # Get all backups with detail
         backups = self.backups_client.list_backups(
             detail=True)['backups']
+        for backup_info in backups:
+            self.assertIn('created_at', backup_info)
+            self.assertIn('links', backup_info)
         self.assertIn((backup['name'], backup['id']),
                       [(m['name'], m['id']) for m in backups])
 
@@ -97,7 +99,7 @@ class VolumesBackupsTest(base.BaseVolumeTest):
                         matchers.ContainsAll(metadata.items()))
 
     @decorators.idempotent_id('07af8f6d-80af-44c9-a5dc-c8427b1b62e6')
-    @test.services('compute')
+    @utils.services('compute')
     def test_backup_create_attached_volume(self):
         """Test backup create using force flag.
 
@@ -106,8 +108,7 @@ class VolumesBackupsTest(base.BaseVolumeTest):
         """
         # Create a server
         volume = self.create_volume()
-        self.addCleanup(self.volumes_client.delete_volume,
-                        volume['id'])
+        self.addCleanup(self.delete_volume, self.volumes_client, volume['id'])
         server = self.create_server()
         # Attach volume to instance
         self.attach_volume(server['id'], volume['id'])
@@ -119,7 +120,7 @@ class VolumesBackupsTest(base.BaseVolumeTest):
         self.assertEqual(backup_name, backup['name'])
 
     @decorators.idempotent_id('2a8ba340-dff2-4511-9db7-646f07156b15')
-    @test.services('image')
+    @utils.services('image')
     def test_bootable_volume_backup_and_restore(self):
         # Create volume from image
         img_uuid = CONF.compute.image_ref
@@ -127,7 +128,7 @@ class VolumesBackupsTest(base.BaseVolumeTest):
 
         volume_details = self.volumes_client.show_volume(
             volume['id'])['volume']
-        self.assertEqual('true', volume_details['bootable'])
+        self.assertTrue(volume_details['bootable'])
 
         # Create a backup
         backup = self.create_backup(volume_id=volume['id'])
@@ -139,7 +140,7 @@ class VolumesBackupsTest(base.BaseVolumeTest):
         restored_volume_info = self.volumes_client.show_volume(
             restored_volume_id)['volume']
 
-        self.assertEqual('true', restored_volume_info['bootable'])
+        self.assertTrue(restored_volume_info['bootable'])
 
 
 class VolumesBackupsV39Test(base.BaseVolumeTest):

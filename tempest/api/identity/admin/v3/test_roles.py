@@ -32,6 +32,8 @@ class RolesV3TestJSON(base.BaseIdentityV3AdminTest):
         for _ in range(3):
             role_name = data_utils.rand_name(name='role')
             role = cls.roles_client.create_role(name=role_name)['role']
+            cls.addClassResourceCleanup(cls.roles_client.delete_role,
+                                        role['id'])
             cls.roles.append(role)
         u_name = data_utils.rand_name('user')
         u_desc = '%s description' % u_name
@@ -42,29 +44,23 @@ class RolesV3TestJSON(base.BaseIdentityV3AdminTest):
             data_utils.rand_name('project'),
             description=data_utils.rand_name('project-desc'),
             domain_id=cls.domain['id'])['project']
+        cls.addClassResourceCleanup(cls.projects_client.delete_project,
+                                    cls.project['id'])
         cls.group_body = cls.groups_client.create_group(
             name=data_utils.rand_name('Group'), project_id=cls.project['id'],
             domain_id=cls.domain['id'])['group']
+        cls.addClassResourceCleanup(cls.groups_client.delete_group,
+                                    cls.group_body['id'])
         cls.user_body = cls.users_client.create_user(
             name=u_name, description=u_desc, password=cls.u_password,
             email=u_email, project_id=cls.project['id'],
             domain_id=cls.domain['id'])['user']
+        cls.addClassResourceCleanup(cls.users_client.delete_user,
+                                    cls.user_body['id'])
         cls.role = cls.roles_client.create_role(
             name=data_utils.rand_name('Role'))['role']
-
-    @classmethod
-    def resource_cleanup(cls):
-        cls.roles_client.delete_role(cls.role['id'])
-        cls.groups_client.delete_group(cls.group_body['id'])
-        cls.users_client.delete_user(cls.user_body['id'])
-        cls.projects_client.delete_project(cls.project['id'])
-        # NOTE(harika-vakadi): It is necessary to disable the domain
-        # before deleting,or else it would result in unauthorized error
-        cls.domains_client.update_domain(cls.domain['id'], enabled=False)
-        cls.domains_client.delete_domain(cls.domain['id'])
-        for role in cls.roles:
-            cls.roles_client.delete_role(role['id'])
-        super(RolesV3TestJSON, cls).resource_cleanup()
+        cls.addClassResourceCleanup(cls.roles_client.delete_role,
+                                    cls.role['id'])
 
     @decorators.attr(type='smoke')
     @decorators.idempotent_id('18afc6c0-46cf-4911-824e-9989cc056c3a')
@@ -342,14 +338,13 @@ class RolesV3TestJSON(base.BaseIdentityV3AdminTest):
         # domain role to a global one
         self._create_implied_role(domain_role1['id'], self.role['id'])
 
-        if CONF.identity_feature_enabled.forbid_global_implied_dsr:
-            # The contrary is not true: we can't create an inference rule
-            # from a global role to a domain role
-            self.assertRaises(
-                lib_exc.Forbidden,
-                self.roles_client.create_role_inference_rule,
-                self.role['id'],
-                domain_role1['id'])
+        # The contrary is not true: we can't create an inference rule
+        # from a global role to a domain role
+        self.assertRaises(
+            lib_exc.Forbidden,
+            self.roles_client.create_role_inference_rule,
+            self.role['id'],
+            domain_role1['id'])
 
     @decorators.idempotent_id('3859df7e-5b78-4e4d-b10e-214c8953842a')
     def test_assignments_for_domain_roles(self):

@@ -12,11 +12,11 @@
 
 from oslo_log import log as logging
 
+from tempest.common import utils
 from tempest.common import waiters
 from tempest import config
 from tempest.lib import decorators
 from tempest.scenario import manager
-from tempest import test
 
 CONF = config.CONF
 LOG = logging.getLogger(__name__)
@@ -81,6 +81,8 @@ class TestVolumeMigrateRetypeAttached(manager.ScenarioTest):
         return source_body['name'], dest_body['name']
 
     def _volume_retype_with_migration(self, volume_id, new_volume_type):
+        # NOTE: The 'on-demand' migration requires admin operation, so
+        # admin_volumes_client() should be used here.
         migration_policy = 'on-demand'
         self.admin_volumes_client.retype_volume(
             volume_id, new_type=new_volume_type,
@@ -90,7 +92,7 @@ class TestVolumeMigrateRetypeAttached(manager.ScenarioTest):
 
     @decorators.attr(type='slow')
     @decorators.idempotent_id('deadd2c2-beef-4dce-98be-f86765ff311b')
-    @test.services('compute', 'volume')
+    @utils.services('compute', 'volume')
     def test_volume_migrate_attached(self):
         LOG.info("Creating keypair and security group")
         keypair = self.create_keypair()

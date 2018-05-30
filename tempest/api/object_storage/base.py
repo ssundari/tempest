@@ -36,14 +36,18 @@ def delete_containers(containers, container_client, object_client):
     using HA proxy sync the deletion properly, otherwise, the container
     might fail to be deleted because it's not empty.
 
-    :param containers: List of containers to be deleted
+    :param containers: List of containers(or string of a container)
+                       to be deleted
     :param container_client: Client to be used to delete containers
     :param object_client: Client to be used to delete objects
     """
+    if isinstance(containers, str):
+        containers = [containers]
+
     for cont in containers:
         try:
             params = {'limit': 9999, 'format': 'json'}
-            _, objlist = container_client.list_container_contents(cont, params)
+            _, objlist = container_client.list_container_objects(cont, params)
             # delete every object in the container
             for obj in objlist:
                 test_utils.call_and_ignore_notfound_exc(
@@ -71,9 +75,6 @@ class BaseObjectTest(tempest.test.BaseTestCase):
     def setup_credentials(cls):
         cls.set_network_resources()
         super(BaseObjectTest, cls).setup_credentials()
-        # credentials may be overwritten by children classes
-        if hasattr(cls, 'os_roles_operator'):
-            cls.os = cls.os_roles_operator
 
     @classmethod
     def setup_clients(cls):
@@ -109,7 +110,7 @@ class BaseObjectTest(tempest.test.BaseTestCase):
     def create_container(cls):
         # wrapper that returns a test container
         container_name = data_utils.rand_name(name='TestContainer')
-        cls.container_client.create_container(container_name)
+        cls.container_client.update_container(container_name)
         cls.containers.append(container_name)
 
         return container_name

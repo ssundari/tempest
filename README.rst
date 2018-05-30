@@ -2,8 +2,8 @@
 Team and repository tags
 ========================
 
-.. image:: http://governance.openstack.org/badges/tempest.svg
-    :target: http://governance.openstack.org/reference/tags/index.html
+.. image:: https://governance.openstack.org/tc/badges/tempest.svg
+    :target: https://governance.openstack.org/tc/reference/tags/index.html
 
 .. Change things from this point on
 
@@ -15,7 +15,7 @@ https://docs.openstack.org/tempest/latest/
 
 This is a set of integration tests to be run against a live OpenStack
 cluster. Tempest has batteries of tests for OpenStack API validation,
-Scenarios, and other specific tests useful in validating an OpenStack
+scenarios, and other specific tests useful in validating an OpenStack
 deployment.
 
 Design Principles
@@ -61,7 +61,7 @@ as it is simpler, and quicker to work with.
 #. You first need to install Tempest. This is done with pip after you check out
    the Tempest repo::
 
-    $ git clone http://git.openstack.org/openstack/tempest
+    $ git clone https://git.openstack.org/openstack/tempest
     $ pip install tempest/
 
    This can be done within a venv, but the assumption for this guide is that
@@ -133,7 +133,7 @@ For more details refer to the library documentation here: :ref:`library`
 
 Release Versioning
 ------------------
-`Tempest Release Notes <http://docs.openstack.org/releasenotes/tempest>`_
+`Tempest Release Notes <https://docs.openstack.org/releasenotes/tempest>`_
 shows what changes have been released on each version.
 
 Tempest's released versions are broken into 2 sets of information. Depending on
@@ -183,15 +183,34 @@ Unit Tests
 Tempest also has a set of unit tests which test the Tempest code itself. These
 tests can be run by specifying the test discovery path::
 
-    $ OS_TEST_PATH=./tempest/tests testr run --parallel
+    $ stestr --test-path ./tempest/tests run
 
-By setting OS_TEST_PATH to ./tempest/tests it specifies that test discover
-should only be run on the unit test directory. The default value of OS_TEST_PATH
-is OS_TEST_PATH=./tempest/test_discover which will only run test discover on the
+By setting ``--test-path`` option to ./tempest/tests it specifies that test discover
+should only be run on the unit test directory. The default value of ``test_path``
+is ``test_path=./tempest/test_discover`` which will only run test discover on the
 Tempest suite.
 
 Alternatively, there are the py27 and py35 tox jobs which will run the unit
 tests with the corresponding version of python.
+
+One common activity is to just run a single test, you can do this with tox
+simply by specifying to just run py27 or py35 tests against a single test::
+
+    $ tox -e py27 -- -n tempest.tests.test_microversions.TestMicroversionsTestsClass.test_config_version_none_23
+
+Or all tests in the test_microversions.py file::
+
+    $ tox -e py27 -- -n tempest.tests.test_microversions
+
+You may also use regular expressions to run any matching tests::
+
+    $ tox -e py27 -- test_microversions
+
+Additionally, when running a single test, or test-file, the ``-n/--no-discover``
+argument is no longer required, however it may perform faster if included.
+
+For more information on these options and details about stestr, please see the
+`stestr documentation <http://stestr.readthedocs.io/en/latest/MANUAL.html>`_.
 
 Python 2.6
 ----------

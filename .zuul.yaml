@@ -1,0 +1,291 @@
+- job:
+    name: devstack-tempest
+    parent: devstack
+    description: Base Tempest job.
+    required-projects:
+      - openstack/tempest
+    timeout: 7200
+    roles:
+      - zuul: openstack-dev/devstack
+    vars:
+      devstack_services:
+        tempest: true
+      test_results_stage_name: 'test_results'
+      zuul_copy_output:
+        '{{ devstack_base_dir }}/tempest/etc/tempest.conf': 'logs'
+        '{{ devstack_base_dir }}/tempest/etc/accounts.yaml': 'logs'
+        '{{ devstack_base_dir }}/tempest/tempest.log': 'logs'
+        '{{ stage_dir }}/{{ test_results_stage_name }}.subunit': 'logs'
+        '{{ stage_dir }}/{{ test_results_stage_name }}.html': 'logs'
+        '{{ stage_dir }}/stackviz': 'logs'
+      extensions_to_txt:
+        conf: True
+        log: True
+        yaml: True
+        yml: True
+    run: playbooks/devstack-tempest.yaml
+    post-run: playbooks/post-tempest.yaml
+
+- job:
+    name: tempest-full
+    parent: devstack-tempest
+    # This currently works from stable/pike on.
+    branches:
+      - master
+      - stable/queens
+      - stable/pike
+    description: |
+      Base integration test with Neutron networking and py27.
+      Former names for this job where:
+        * legacy-tempest-dsvm-neutron-full
+        * gate-tempest-dsvm-neutron-full-ubuntu-xenial
+    vars:
+      tox_envlist: full
+      devstack_localrc:
+        ENABLE_FILE_INJECTION: true
+
+- job:
+    name: tempest-full-parallel
+    parent: tempest-full
+    voting: false
+    branches:
+      - master
+    description: |
+      Base integration test with Neutron networking and py27.
+      It includes all scenarios as it was in the past.
+      This job runs all scenario tests in parallel!
+    vars:
+      tox_envlist: full-parallel
+
+- job:
+    name: tempest-full-py3
+    parent: devstack-tempest
+    branches:
+      - master
+      - stable/queens
+    description: |
+      Base integration test with Neutron networking and py3.
+      Former names for this job where:
+        * legacy-tempest-dsvm-py35
+        * gate-tempest-dsvm-py35
+    vars:
+      tox_envlist: full
+      devstack_localrc:
+        USE_PYTHON3: True
+        FORCE_CONFIG_DRIVE: True
+      devstack_services:
+        s-account: false
+        s-container: false
+        s-object: false
+        s-proxy: false
+        # without Swift, c-bak cannot run (in the Gate at least)
+        c-bak: false
+
+- nodeset:
+    name: openstack-bionic-node
+    nodes:
+      - name: controller
+        label: ubuntu-bionic
+    groups:
+      - name: tempest
+        nodes:
+          - controller
+
+- job:
+    name: tempest-full-py36
+    parent: tempest-full-py3
+    nodeset: openstack-bionic-node
+    branches:
+      - master
+    description: |
+      Base integration test with Neutron networking and py36.
+    voting: false
+
+- job:
+    name: tempest-full-queens
+    parent: tempest-full
+    override-checkout: stable/queens
+
+- job:
+    name: tempest-full-queens-py3
+    parent: tempest-full-py3
+    override-checkout: stable/queens
+
+- job:
+    name: tempest-full-pike
+    parent: tempest-full
+    override-checkout: stable/pike
+
+- job:
+    name: tempest-tox-plugin-sanity-check
+    parent: tox
+    description: |
+      Run tempest plugin sanity check script using tox.
+    nodeset: ubuntu-xenial
+    vars:
+      tox_envlist: plugin-sanity-check
+    voting: false
+    timeout: 5000
+    irrelevant-files:
+      - ^.*\.rst$
+      - ^doc/.*$
+      - ^etc/.*$
+      - ^releasenotes/.*$
+      - ^tempest/hacking/.*$
+      - ^tempest/tests/.*$
+    required-projects:
+      - openstack/almanach
+      - openstack/aodh
+      - openstack/barbican-tempest-plugin
+      - openstack/ceilometer
+      - openstack/cinder
+      - openstack/congress
+      - openstack/designate-tempest-plugin
+      - openstack/ec2-api
+      - openstack/freezer
+      - openstack/freezer-api
+      - openstack/freezer-tempest-plugin
+      - openstack/gce-api
+      - openstack/glare
+      - openstack/heat
+      - openstack/intel-nfv-ci-tests
+      - openstack/ironic
+      - openstack/ironic-inspector
+      - openstack/keystone-tempest-plugin
+      - openstack/kingbird
+      - openstack/kuryr-tempest-plugin
+      - openstack/magnum
+      - openstack/magnum-tempest-plugin
+      - openstack/manila
+      - openstack/manila-tempest-plugin
+      - openstack/mistral
+      - openstack/mogan
+      - openstack/monasca-api
+      - openstack/monasca-log-api
+      - openstack/murano
+      - openstack/networking-bgpvpn
+      - openstack/networking-cisco
+      - openstack/networking-fortinet
+      - openstack/networking-generic-switch
+      - openstack/networking-l2gw
+      - openstack/networking-midonet
+      - openstack/networking-plumgrid
+      - openstack/networking-sfc
+      - openstack/neutron
+      - openstack/neutron-dynamic-routing
+      - openstack/neutron-fwaas
+      - openstack/neutron-lbaas
+      - openstack/neutron-tempest-plugin
+      - openstack/neutron-vpnaas
+      - openstack/nova-lxd
+      - openstack/novajoin-tempest-plugin
+      - openstack/octavia-tempest-plugin
+      - openstack/oswin-tempest-plugin
+      - openstack/panko
+      - openstack/patrole
+      - openstack/qinling
+      - openstack/requirements
+      - openstack/sahara-tests
+      - openstack/senlin
+      - openstack/senlin-tempest-plugin
+      - openstack/tap-as-a-service
+      - openstack/tempest-horizon
+      - openstack/trio2o
+      - openstack/trove
+      - openstack/valet
+      - openstack/vitrage
+      - openstack/vmware-nsx-tempest-plugin
+      - openstack/watcher-tempest-plugin
+      - openstack/zaqar-tempest-plugin
+      - openstack/zun-tempest-plugin
+
+- project:
+    check:
+      jobs:
+        - devstack-tempest:
+            files:
+              - ^playbooks/
+              - ^roles/
+              - ^.zuul.yaml$
+        - nova-multiattach
+        - tempest-full-parallel:
+            irrelevant-files:
+              - ^(test-|)requirements.txt$
+              - ^.*\.rst$
+              - ^doc/.*$
+              - ^etc/.*$
+              - ^releasenotes/.*$
+              - ^setup.cfg$
+              - ^tempest/hacking/.*$
+              - ^tempest/tests/.*$
+        - tempest-full-py36:
+            irrelevant-files:
+              - ^(test-|)requirements.txt$
+              - ^.*\.rst$
+              - ^doc/.*$
+              - ^etc/.*$
+              - ^releasenotes/.*$
+              - ^setup.cfg$
+              - ^tempest/hacking/.*$
+              - ^tempest/tests/.*$
+        - tempest-full-queens:
+            irrelevant-files:
+              - ^(test-|)requirements.txt$
+              - ^.*\.rst$
+              - ^doc/.*$
+              - ^etc/.*$
+              - ^releasenotes/.*$
+              - ^setup.cfg$
+              - ^tempest/hacking/.*$
+              - ^tempest/tests/.*$
+        - tempest-full-queens-py3:
+            irrelevant-files:
+              - ^(test-|)requirements.txt$
+              - ^.*\.rst$
+              - ^doc/.*$
+              - ^etc/.*$
+              - ^releasenotes/.*$
+              - ^setup.cfg$
+              - ^tempest/hacking/.*$
+              - ^tempest/tests/.*$
+        - tempest-full-pike:
+            irrelevant-files:
+              - ^(test-|)requirements.txt$
+              - ^.*\.rst$
+              - ^doc/.*$
+              - ^etc/.*$
+              - ^releasenotes/.*$
+              - ^setup.cfg$
+              - ^tempest/hacking/.*$
+              - ^tempest/tests/.*$
+        - tempest-tox-plugin-sanity-check
+    gate:
+      jobs:
+        - nova-multiattach
+    experimental:
+      jobs:
+        - nova-cells-v1:
+            irrelevant-files:
+              - ^(test-|)requirements.txt$
+              - ^.*\.rst$
+              - ^doc/.*$
+              - ^etc/.*$
+              - ^releasenotes/.*$
+              - ^setup.cfg$
+              - ^tempest/hacking/.*$
+              - ^tempest/tests/.*$
+        - nova-live-migration:
+            irrelevant-files:
+              - ^(test-|)requirements.txt$
+              - ^.*\.rst$
+              - ^doc/.*$
+              - ^etc/.*$
+              - ^releasenotes/.*$
+              - ^setup.cfg$
+              - ^tempest/hacking/.*$
+              - ^tempest/tests/.*$
+    periodic-stable:
+      jobs:
+        - tempest-full-queens
+        - tempest-full-queens-py3
+        - tempest-full-pike

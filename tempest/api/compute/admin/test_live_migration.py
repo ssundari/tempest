@@ -20,10 +20,10 @@ import testtools
 
 from tempest.api.compute import base
 from tempest.common import compute
+from tempest.common import utils
 from tempest.common import waiters
 from tempest import config
 from tempest.lib import decorators
-from tempest import test
 
 CONF = config.CONF
 LOG = logging.getLogger(__name__)
@@ -44,6 +44,18 @@ class LiveMigrationTest(base.BaseV2ComputeAdminTest):
         if CONF.compute.min_compute_nodes < 2:
             raise cls.skipException(
                 "Less than 2 compute nodes, skipping migration test.")
+
+    @classmethod
+    def setup_credentials(cls):
+        # These tests don't attempt any SSH validation nor do they use
+        # floating IPs on the instance, so all we need is a network and
+        # a subnet so the instance being migrated has a single port, but
+        # we need that to make sure we are properly updating the port
+        # host bindings during the live migration.
+        # TODO(mriedem): SSH validation before and after the instance is
+        # live migrated would be a nice test wrinkle addition.
+        cls.set_network_resources(network=True, subnet=True)
+        super(LiveMigrationTest, cls).setup_credentials()
 
     @classmethod
     def setup_clients(cls):
@@ -120,9 +132,11 @@ class LiveMigrationTest(base.BaseV2ComputeAdminTest):
     def test_live_block_migration_paused(self):
         self._test_live_migration(state='PAUSED')
 
-    @decorators.skip_because(bug="1524898")
+    @testtools.skipUnless(CONF.compute_feature_enabled.
+                          volume_backed_live_migration,
+                          'Volume-backed live migration not available')
     @decorators.idempotent_id('5071cf17-3004-4257-ae61-73a84e28badd')
-    @test.services('volume')
+    @utils.services('volume')
     def test_volume_backed_live_migration(self):
         self._test_live_migration(volume_backed=True)
 
@@ -133,6 +147,7 @@ class LiveMigrationTest(base.BaseV2ComputeAdminTest):
     @testtools.skipIf(not CONF.compute_feature_enabled.
                       block_migrate_cinder_iscsi,
                       'Block Live migration not configured for iSCSI')
+    @utils.services('volume')
     def test_iscsi_volume(self):
         server = self.create_test_server(wait_until="ACTIVE")
         server_id = server['id']
@@ -144,14 +159,11 @@ class LiveMigrationTest(base.BaseV2ComputeAdminTest):
         self.attach_volume(server, volume, device='/dev/xvdb')
         server = self.admin_servers_client.show_server(server_id)['server']
         volume_id1 = server["os-extended-volumes:volumes_attached"][0]["id"]
-        self._migrate_server_to(server_id, target_host)
-        waiters.wait_for_server_status(self.servers_client,
-                                       server_id, 'ACTIVE')
+        self._live_migrate(server_id, target_host, 'ACTIVE')
 
         server = self.admin_servers_client.show_server(server_id)['server']
         volume_id2 = server["os-extended-volumes:volumes_attached"][0]["id"]
 
-        self.assertEqual(target_host, self.get_host_for_server(server_id))
         self.assertEqual(volume_id1, volume_id2)
 
 
@@ -190,10 +202,7 @@ class LiveMigrationRemoteConsolesV26Test(LiveMigrationTest):
         self._verify_console_interaction(server01_id)
         self._verify_console_interaction(server02_id)
 
-        self._migrate_server_to(server01_id, host02_id)
-        waiters.wait_for_server_status(self.servers_client,
-                                       server01_id, 'ACTIVE')
-        self.assertEqual(host02_id, self.get_host_for_server(server01_id))
+        self._live_migrate(server01_id, host02_id, 'ACTIVE')
         self._verify_console_interaction(server01_id)
         # At this point, both instances have a valid serial console
         # connection, which means the ports got updated.
@@ -216,8 +225,8 @@ class LiveMigrationRemoteConsolesV26Test(LiveMigrationTest):
             while data not in console_output and t <= 120.0:
                 try:
                     ws.send_frame(data)
-                    recieved = ws.receive_frame()
-                    console_output += recieved
+                    received = ws.receive_frame()
+                    console_output += received
                 except Exception:
                     # In case we had an issue with send/receive on the
                     # websocket connection, we create a new one.

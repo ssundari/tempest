@@ -99,6 +99,15 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
         cls.versions_client = cls.os_primary.compute_versions_client
         if CONF.service_available.cinder:
             cls.volumes_client = cls.os_primary.volumes_client_latest
+        if CONF.service_available.glance:
+            if CONF.image_feature_enabled.api_v1:
+                cls.images_client = cls.os_primary.image_client
+            elif CONF.image_feature_enabled.api_v2:
+                cls.images_client = cls.os_primary.image_client_v2
+            else:
+                raise lib_exc.InvalidConfiguration(
+                    'Either api_v1 or api_v2 must be True in '
+                    '[image-feature-enabled].')
 
     @classmethod
     def resource_setup(cls):
@@ -116,42 +125,36 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
         cls.ssh_user = CONF.validation.image_ssh_user
         cls.image_ssh_user = CONF.validation.image_ssh_user
         cls.image_ssh_password = CONF.validation.image_ssh_password
-        cls.servers = []
-        cls.images = []
-        cls.security_groups = []
-        cls.server_groups = []
-        cls.volumes = []
 
     @classmethod
-    def resource_cleanup(cls):
-        cls.clear_resources('images', cls.images,
-                            cls.compute_images_client.delete_image)
-        cls.clear_servers()
-        cls.clear_resources('security groups', cls.security_groups,
-                            cls.security_groups_client.delete_security_group)
-        cls.clear_resources('server groups', cls.server_groups,
-                            cls.server_groups_client.delete_server_group)
-        cls.clear_volumes()
-        super(BaseV2ComputeTest, cls).resource_cleanup()
+    def is_requested_microversion_compatible(cls, max_version):
+        """Check the compatibility of selected request microversion
 
-    @classmethod
-    def clear_servers(cls):
-        LOG.debug('Clearing servers: %s', ','.join(
-            server['id'] for server in cls.servers))
-        for server in cls.servers:
-            try:
-                test_utils.call_and_ignore_notfound_exc(
-                    cls.servers_client.delete_server, server['id'])
-            except Exception:
-                LOG.exception('Deleting server %s failed', server['id'])
+        This method will check if selected request microversion
+        (cls.request_microversion) for test is compatible with respect
+        to 'max_version'. Compatible means if selected request microversion
+        is in the range(<=) of 'max_version'.
 
-        for server in cls.servers:
-            try:
-                waiters.wait_for_server_termination(cls.servers_client,
-                                                    server['id'])
-            except Exception:
-                LOG.exception('Waiting for deletion of server %s failed',
-                              server['id'])
+        :param max_version: maximum microversion to compare for compatibility.
+            Example: '2.30'
+        :returns: True if selected request microversion is compatible with
+            'max_version'. False in other case.
+        """
+        try:
+            req_version_obj = api_version_request.APIVersionRequest(
+                cls.request_microversion)
+        # NOTE(gmann): This is case where this method is used before calling
+        # resource_setup(), where cls.request_microversion is set. There may
+        # not be any such case but still we can handle this case.
+        except AttributeError:
+            request_microversion = (
+                api_version_utils.select_request_microversion(
+                    cls.min_microversion,
+                    CONF.compute.min_microversion))
+            req_version_obj = api_version_request.APIVersionRequest(
+                request_microversion)
+        max_version_obj = api_version_request.APIVersionRequest(max_version)
+        return req_version_obj <= max_version_obj
 
     @classmethod
     def server_check_teardown(cls):
@@ -190,7 +193,7 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
 
     @classmethod
     def create_test_server(cls, validatable=False, volume_backed=False,
-                           **kwargs):
+                           validation_resources=None, **kwargs):
         """Wrapper utility that returns a test server.
 
         This wrapper utility calls the common create test server and
@@ -200,6 +203,10 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
 
         :param validatable: Whether the server will be pingable or sshable.
         :param volume_backed: Whether the instance is volume backed or not.
+        :param validation_resources: Dictionary of validation resources as
+            returned by `get_class_validation_resources`.
+        :param kwargs: Extra arguments are passed down to the
+            `compute.create_test_server` call.
         """
         if 'name' not in kwargs:
             kwargs['name'] = data_utils.rand_name(cls.__name__ + "-server")
@@ -208,20 +215,29 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
             cls.request_microversion)
         v2_37_version = api_version_request.APIVersionRequest('2.37')
 
+        tenant_network = cls.get_tenant_network()
         # NOTE(snikitin): since microversion v2.37 'networks' field is required
-        if request_version >= v2_37_version and 'networks' not in kwargs:
+        if (request_version >= v2_37_version and 'networks' not in kwargs and
+            not tenant_network):
             kwargs['networks'] = 'none'
 
-        tenant_network = cls.get_tenant_network()
         body, servers = compute.create_test_server(
             cls.os_primary,
             validatable,
-            validation_resources=cls.validation_resources,
+            validation_resources=validation_resources,
             tenant_network=tenant_network,
             volume_backed=volume_backed,
             **kwargs)
 
-        cls.servers.extend(servers)
+        # For each server schedule wait and delete, so we first delete all
+        # and then wait for all
+        for server in servers:
+            cls.addClassResourceCleanup(waiters.wait_for_server_termination,
+                                        cls.servers_client, server['id'])
+        for server in servers:
+            cls.addClassResourceCleanup(
+                test_utils.call_and_ignore_notfound_exc,
+                cls.servers_client.delete_server, server['id'])
 
         return body
 
@@ -233,7 +249,10 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
             description = data_utils.rand_name('description')
         body = cls.security_groups_client.create_security_group(
             name=name, description=description)['security_group']
-        cls.security_groups.append(body['id'])
+        cls.addClassResourceCleanup(
+            test_utils.call_and_ignore_notfound_exc,
+            cls.security_groups_client.delete_security_group,
+            body['id'])
 
         return body
 
@@ -245,7 +264,10 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
             policy = ['affinity']
         body = cls.server_groups_client.create_server_group(
             name=name, policies=policy)['server_group']
-        cls.server_groups.append(body['id'])
+        cls.addClassResourceCleanup(
+            test_utils.call_and_ignore_notfound_exc,
+            cls.server_groups_client.delete_server_group,
+            body['id'])
         return body
 
     def wait_for(self, condition):
@@ -263,18 +285,6 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
                 return
             time.sleep(self.build_interval)
 
-    @staticmethod
-    def _delete_volume(volumes_client, volume_id):
-        """Deletes the given volume and waits for it to be gone."""
-        try:
-            volumes_client.delete_volume(volume_id)
-            # TODO(mriedem): We should move the wait_for_resource_deletion
-            # into the delete_volume method as a convenience to the caller.
-            volumes_client.wait_for_resource_deletion(volume_id)
-        except lib_exc.NotFound:
-            LOG.warning("Unable to delete volume '%s' since it was not found. "
-                        "Maybe it was already deleted?", volume_id)
-
     @classmethod
     def prepare_instance_network(cls):
         if (CONF.validation.auth_method != 'disabled' and
@@ -284,7 +294,11 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
 
     @classmethod
     def create_image_from_server(cls, server_id, **kwargs):
-        """Wrapper utility that returns an image created from the server."""
+        """Wrapper utility that returns an image created from the server.
+
+        If compute microversion >= 2.36, the returned image response will
+        be from the image service API rather than the compute image proxy API.
+        """
         name = kwargs.pop('name',
                           data_utils.rand_name(cls.__name__ + "-image"))
         wait_until = kwargs.pop('wait_until', None)
@@ -292,13 +306,26 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
 
         image = cls.compute_images_client.create_image(server_id, name=name,
                                                        **kwargs)
-        image_id = data_utils.parse_image_id(image.response['location'])
-        cls.images.append(image_id)
+        if api_version_utils.compare_version_header_to_response(
+            "OpenStack-API-Version", "compute 2.45", image.response, "lt"):
+            image_id = image['image_id']
+        else:
+            image_id = data_utils.parse_image_id(image.response['location'])
+
+        # The compute image proxy APIs were deprecated in 2.35 so
+        # use the images client directly if the API microversion being
+        # used is >=2.36.
+        if api_version_utils.compare_version_header_to_response(
+                "OpenStack-API-Version", "compute 2.36", image.response, "lt"):
+            client = cls.images_client
+        else:
+            client = cls.compute_images_client
+        cls.addClassResourceCleanup(test_utils.call_and_ignore_notfound_exc,
+                                    client.delete_image, image_id)
 
         if wait_until is not None:
             try:
-                waiters.wait_for_image_status(cls.compute_images_client,
-                                              image_id, wait_until)
+                waiters.wait_for_image_status(client, image_id, wait_until)
             except lib_exc.NotFound:
                 if wait_until.upper() == 'ACTIVE':
                     # If the image is not found after create_image returned
@@ -316,7 +343,11 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
                             image_id=image_id)
                 else:
                     raise
-            image = cls.compute_images_client.show_image(image_id)['image']
+            image = client.show_image(image_id)
+            # Compute image client returns response wrapped in 'image' element
+            # which is not the case with Glance image client.
+            if 'image' in image:
+                image = image['image']
 
             if wait_until.upper() == 'ACTIVE':
                 if wait_for_server:
@@ -325,14 +356,34 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
         return image
 
     @classmethod
-    def rebuild_server(cls, server_id, validatable=False, **kwargs):
-        # Destroy an existing server and creates a new one
+    def recreate_server(cls, server_id, validatable=False, **kwargs):
+        """Destroy an existing class level server and creates a new one
+
+        Some test classes use a test server that can be used by multiple
+        tests. This is done to optimise runtime and test load.
+        If something goes wrong with the test server, it can be rebuilt
+        using this helper.
+
+        This helper can also be used for the initial provisioning if no
+        server_id is specified.
+
+        :param server_id: UUID of the server to be rebuilt. If None is
+            specified, a new server is provisioned.
+        :param validatable: whether to the server needs to be
+            validatable. When True, validation resources are acquired via
+            the `get_class_validation_resources` helper.
+        :param kwargs: extra paramaters are passed through to the
+            `create_test_server` call.
+        :return: the UUID of the created server.
+        """
         if server_id:
             cls.delete_server(server_id)
 
         cls.password = data_utils.rand_password()
         server = cls.create_test_server(
             validatable,
+            validation_resources=cls.get_class_validation_resources(
+                cls.os_primary),
             wait_until='ACTIVE',
             adminPass=cls.password,
             **kwargs)
@@ -356,21 +407,44 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
                                        'VERIFY_RESIZE')
         cls.servers_client.confirm_resize_server(server_id)
         waiters.wait_for_server_status(cls.servers_client, server_id, 'ACTIVE')
+        server = cls.servers_client.show_server(server_id)['server']
+        # Nova API > 2.46 no longer includes flavor.id
+        if server['flavor'].get('id'):
+            if new_flavor_id != server['flavor']['id']:
+                msg = ('Flavor id of %s is not equal to new_flavor_id.'
+                       % server_id)
+                raise lib_exc.TempestException(msg)
 
     @classmethod
     def delete_volume(cls, volume_id):
         """Deletes the given volume and waits for it to be gone."""
-        cls._delete_volume(cls.volumes_client, volume_id)
+        try:
+            cls.volumes_client.delete_volume(volume_id)
+            # TODO(mriedem): We should move the wait_for_resource_deletion
+            # into the delete_volume method as a convenience to the caller.
+            cls.volumes_client.wait_for_resource_deletion(volume_id)
+        except lib_exc.NotFound:
+            LOG.warning("Unable to delete volume '%s' since it was not found. "
+                        "Maybe it was already deleted?", volume_id)
 
     @classmethod
-    def get_server_ip(cls, server):
+    def get_server_ip(cls, server, validation_resources=None):
         """Get the server fixed or floating IP.
 
         Based on the configuration we're in, return a correct ip
         address for validating that a guest is up.
+
+        :param server: The server dict as returned by the API
+        :param validation_resources: The dict of validation resources
+            provisioned for the server.
         """
         if CONF.validation.connect_method == 'floating':
-            return cls.validation_resources['floating_ip']['ip']
+            if validation_resources:
+                return validation_resources['floating_ip']['ip']
+            else:
+                msg = ('When validation.connect_method equals floating, '
+                       'validation_resources cannot be None')
+                raise exceptions.InvalidParam(invalid_param=msg)
         elif CONF.validation.connect_method == 'fixed':
             addresses = server['addresses'][CONF.validation.network_for_ssh]
             for address in addresses:
@@ -401,30 +475,33 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
         if image_ref is not None:
             kwargs['imageRef'] = image_ref
         volume = cls.volumes_client.create_volume(**kwargs)['volume']
-        cls.volumes.append(volume)
+        cls.addClassResourceCleanup(
+            cls.volumes_client.wait_for_resource_deletion, volume['id'])
+        cls.addClassResourceCleanup(test_utils.call_and_ignore_notfound_exc,
+                                    cls.volumes_client.delete_volume,
+                                    volume['id'])
         waiters.wait_for_volume_resource_status(cls.volumes_client,
                                                 volume['id'], 'available')
         return volume
 
-    @classmethod
-    def clear_volumes(cls):
-        LOG.debug('Clearing volumes: %s', ','.join(
-            volume['id'] for volume in cls.volumes))
-        for volume in cls.volumes:
-            try:
-                test_utils.call_and_ignore_notfound_exc(
-                    cls.volumes_client.delete_volume, volume['id'])
-            except Exception:
-                LOG.exception('Deleting volume %s failed', volume['id'])
+    def _detach_volume(self, server, volume):
+        """Helper method to detach a volume.
 
-        for volume in cls.volumes:
-            try:
-                cls.volumes_client.wait_for_resource_deletion(volume['id'])
-            except Exception:
-                LOG.exception('Waiting for deletion of volume %s failed',
-                              volume['id'])
+        Ignores 404 responses if the volume or server do not exist, or the
+        volume is already detached from the server.
+        """
+        try:
+            volume = self.volumes_client.show_volume(volume['id'])['volume']
+            # Check the status. You can only detach an in-use volume, otherwise
+            # the compute API will return a 400 response.
+            if volume['status'] == 'in-use':
+                self.servers_client.detach_volume(server['id'], volume['id'])
+        except lib_exc.NotFound:
+            # Ignore 404s on detach in case the server is deleted or the volume
+            # is already detached.
+            pass
 
-    def attach_volume(self, server, volume, device=None, check_reserved=False):
+    def attach_volume(self, server, volume, device=None):
         """Attaches volume to server and waits for 'in-use' volume status.
 
         The volume will be detached when the test tears down.
@@ -433,15 +510,10 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
         :param volume: The volume to attach.
         :param device: Optional mountpoint for the attached volume. Note that
             this is not guaranteed for all hypervisors and is not recommended.
-        :param check_reserved: Consider a status of reserved as valid for
-            completion. This is to handle new Cinder attach where we more
-            accurately use 'reserved' for things like attaching to a shelved
-            server.
         """
         attach_kwargs = dict(volumeId=volume['id'])
         if device:
             attach_kwargs['device'] = device
-
         attachment = self.servers_client.attach_volume(
             server['id'], **attach_kwargs)['volumeAttachment']
         # On teardown detach the volume and wait for it to be available. This
@@ -451,14 +523,9 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
                         self.volumes_client, volume['id'], 'available')
         # Ignore 404s on detach in case the server is deleted or the volume
         # is already detached.
-        self.addCleanup(test_utils.call_and_ignore_notfound_exc,
-                        self.servers_client.detach_volume,
-                        server['id'], volume['id'])
-        statuses = ['in-use']
-        if check_reserved:
-            statuses.append('reserved')
+        self.addCleanup(self._detach_volume, server, volume)
         waiters.wait_for_volume_resource_status(self.volumes_client,
-                                                volume['id'], statuses)
+                                                volume['id'], 'in-use')
         return attachment
 
 
@@ -495,12 +562,10 @@ class BaseV2ComputeAdminTest(BaseV2ComputeTest):
     def get_host_other_than(self, server_id):
         source_host = self.get_host_for_server(server_id)
 
-        list_hosts_resp = self.os_admin.hosts_client.list_hosts()['hosts']
-        hosts = [
-            host_record['host_name']
-            for host_record in list_hosts_resp
-            if host_record['service'] == 'compute'
-        ]
+        svcs = self.os_admin.services_client.list_services(
+            binary='nova-compute')['services']
+        hosts = [svc['host'] for svc in svcs
+                 if svc['state'] == 'up' and svc['status'] == 'enabled']
 
         for target_host in hosts:
             if source_host != target_host:

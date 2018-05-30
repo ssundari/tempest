@@ -17,7 +17,6 @@ from tempest.api.volume import base
 from tempest.common import waiters
 from tempest import config
 from tempest.lib.common.utils import data_utils
-from tempest.lib.common.utils import test_utils
 from tempest.lib import decorators
 
 CONF = config.CONF
@@ -25,45 +24,8 @@ CONF = config.CONF
 
 class GroupsTest(base.BaseVolumeAdminTest):
     _api_version = 3
-    min_microversion = '3.14'
+    min_microversion = '3.13'
     max_microversion = 'latest'
-
-    def _delete_group(self, grp_id, delete_volumes=True):
-        self.groups_client.delete_group(grp_id, delete_volumes)
-        vols = self.volumes_client.list_volumes(detail=True)['volumes']
-        for vol in vols:
-            if vol['group_id'] == grp_id:
-                self.volumes_client.wait_for_resource_deletion(vol['id'])
-        self.groups_client.wait_for_resource_deletion(grp_id)
-
-    def _delete_group_snapshot(self, group_snapshot_id, grp_id):
-        self.group_snapshots_client.delete_group_snapshot(
-            group_snapshot_id)
-        vols = self.volumes_client.list_volumes(detail=True)['volumes']
-        snapshots = self.snapshots_client.list_snapshots(
-            detail=True)['snapshots']
-        for vol in vols:
-            for snap in snapshots:
-                if (vol['group_id'] == grp_id and
-                        vol['id'] == snap['volume_id']):
-                    self.snapshots_client.wait_for_resource_deletion(
-                        snap['id'])
-        self.group_snapshots_client.wait_for_resource_deletion(
-            group_snapshot_id)
-
-    def _create_group(self, group_type, volume_type, grp_name=None):
-        if not grp_name:
-            grp_name = data_utils.rand_name('Group')
-        grp = self.groups_client.create_group(
-            group_type=group_type['id'],
-            volume_types=[volume_type['id']],
-            name=grp_name)['group']
-        self.addCleanup(test_utils.call_and_ignore_notfound_exc,
-                        self._delete_group, grp['id'])
-        waiters.wait_for_volume_resource_status(
-            self.groups_client, grp['id'], 'available')
-        self.assertEqual(grp_name, grp['name'])
-        return grp
 
     @decorators.idempotent_id('4b111d28-b73d-4908-9bd2-03dc2992e4d4')
     def test_group_create_show_list_delete(self):
@@ -75,13 +37,15 @@ class GroupsTest(base.BaseVolumeAdminTest):
 
         # Create group
         grp1_name = data_utils.rand_name('Group1')
-        grp1 = self._create_group(group_type, volume_type,
-                                  grp_name=grp1_name)
+        grp1 = self.create_group(group_type=group_type['id'],
+                                 volume_types=[volume_type['id']],
+                                 name=grp1_name)
         grp1_id = grp1['id']
 
         grp2_name = data_utils.rand_name('Group2')
-        grp2 = self._create_group(group_type, volume_type,
-                                  grp_name=grp2_name)
+        grp2 = self.create_group(group_type=group_type['id'],
+                                 volume_types=[volume_type['id']],
+                                 name=grp2_name)
         grp2_id = grp2['id']
 
         # Create volume
@@ -106,16 +70,16 @@ class GroupsTest(base.BaseVolumeAdminTest):
         self.assertEqual(grp2_id, grp2['id'])
 
         # Get all groups with detail
-        grps = self.groups_client.list_groups(
-            detail=True)['groups']
-        filtered_grps = [g for g in grps if g['id'] in [grp1_id, grp2_id]]
-        self.assertEqual(2, len(filtered_grps))
-        for grp in filtered_grps:
-            self.assertEqual([volume_type['id']], grp['volume_types'])
-            self.assertEqual(group_type['id'], grp['group_type'])
+        grps = self.groups_client.list_groups(detail=True)['groups']
+        for grp_id in [grp1_id, grp2_id]:
+            filtered_grps = [g for g in grps if g['id'] == grp_id]
+            self.assertEqual(1, len(filtered_grps))
+            self.assertEqual([volume_type['id']],
+                             filtered_grps[0]['volume_types'])
+            self.assertEqual(group_type['id'],
+                             filtered_grps[0]['group_type'])
 
-        vols = self.volumes_client.list_volumes(
-            detail=True)['volumes']
+        vols = self.volumes_client.list_volumes(detail=True)['volumes']
         filtered_vols = [v for v in vols if v['id'] in [vol1_id]]
         self.assertEqual(1, len(filtered_vols))
         for vol in filtered_vols:
@@ -123,141 +87,11 @@ class GroupsTest(base.BaseVolumeAdminTest):
 
         # Delete group
         # grp1 has a volume so delete_volumes flag is set to True by default
-        self._delete_group(grp1_id)
+        self.delete_group(grp1_id)
         # grp2 is empty so delete_volumes flag can be set to False
-        self._delete_group(grp2_id, delete_volumes=False)
-        grps = self.groups_client.list_groups(
-            detail=True)['groups']
+        self.delete_group(grp2_id, delete_volumes=False)
+        grps = self.groups_client.list_groups(detail=True)['groups']
         self.assertEmpty(grps)
-
-    @decorators.idempotent_id('1298e537-f1f0-47a3-a1dd-8adec8168897')
-    def test_group_snapshot_create_show_list_delete(self):
-        # Create volume type
-        volume_type = self.create_volume_type()
-
-        # Create group type
-        group_type = self.create_group_type()
-
-        # Create group
-        grp = self._create_group(group_type, volume_type)
-
-        # Create volume
-        vol = self.create_volume(volume_type=volume_type['id'],
-                                 group_id=grp['id'])
-
-        # Create group snapshot
-        group_snapshot_name = data_utils.rand_name('group_snapshot')
-        group_snapshot = (
-            self.group_snapshots_client.create_group_snapshot(
-                group_id=grp['id'],
-                name=group_snapshot_name)['group_snapshot'])
-        snapshots = self.snapshots_client.list_snapshots(
-            detail=True)['snapshots']
-        for snap in snapshots:
-            if vol['id'] == snap['volume_id']:
-                waiters.wait_for_volume_resource_status(
-                    self.snapshots_client, snap['id'], 'available')
-        waiters.wait_for_volume_resource_status(
-            self.group_snapshots_client,
-            group_snapshot['id'], 'available')
-        self.assertEqual(group_snapshot_name, group_snapshot['name'])
-
-        # Get a given group snapshot
-        group_snapshot = self.group_snapshots_client.show_group_snapshot(
-            group_snapshot['id'])['group_snapshot']
-        self.assertEqual(group_snapshot_name, group_snapshot['name'])
-
-        # Get all group snapshots with detail
-        group_snapshots = (
-            self.group_snapshots_client.list_group_snapshots(
-                detail=True)['group_snapshots'])
-        self.assertIn((group_snapshot['name'], group_snapshot['id']),
-                      [(m['name'], m['id']) for m in group_snapshots])
-
-        # Delete group snapshot
-        self._delete_group_snapshot(group_snapshot['id'], grp['id'])
-        group_snapshots = (
-            self.group_snapshots_client.list_group_snapshots(
-                detail=True)['group_snapshots'])
-        self.assertEmpty(group_snapshots)
-
-    @decorators.idempotent_id('eff52c70-efc7-45ed-b47a-4ad675d09b81')
-    def test_create_group_from_group_snapshot(self):
-        # Create volume type
-        volume_type = self.create_volume_type()
-
-        # Create group type
-        group_type = self.create_group_type()
-
-        # Create Group
-        grp = self._create_group(group_type, volume_type)
-
-        # Create volume
-        vol = self.create_volume(volume_type=volume_type['id'],
-                                 group_id=grp['id'])
-
-        # Create group_snapshot
-        group_snapshot_name = data_utils.rand_name('group_snapshot')
-        group_snapshot = (
-            self.group_snapshots_client.create_group_snapshot(
-                group_id=grp['id'],
-                name=group_snapshot_name)['group_snapshot'])
-        self.addCleanup(self._delete_group_snapshot,
-                        group_snapshot['id'], grp['id'])
-        self.assertEqual(group_snapshot_name, group_snapshot['name'])
-        snapshots = self.snapshots_client.list_snapshots(
-            detail=True)['snapshots']
-        for snap in snapshots:
-            if vol['id'] == snap['volume_id']:
-                waiters.wait_for_volume_resource_status(
-                    self.snapshots_client, snap['id'], 'available')
-        waiters.wait_for_volume_resource_status(
-            self.group_snapshots_client,
-            group_snapshot['id'], 'available')
-
-        # Create Group from Group snapshot
-        grp_name2 = data_utils.rand_name('Group_from_snap')
-        grp2 = self.groups_client.create_group_from_source(
-            group_snapshot_id=group_snapshot['id'],
-            name=grp_name2)['group']
-        self.addCleanup(self._delete_group, grp2['id'])
-        self.assertEqual(grp_name2, grp2['name'])
-        vols = self.volumes_client.list_volumes(detail=True)['volumes']
-        for vol in vols:
-            if vol['group_id'] == grp2['id']:
-                waiters.wait_for_volume_resource_status(
-                    self.volumes_client, vol['id'], 'available')
-        waiters.wait_for_volume_resource_status(
-            self.groups_client, grp2['id'], 'available')
-
-    @decorators.idempotent_id('2424af8c-7851-4888-986a-794b10c3210e')
-    def test_create_group_from_group(self):
-        # Create volume type
-        volume_type = self.create_volume_type()
-
-        # Create group type
-        group_type = self.create_group_type()
-
-        # Create Group
-        grp = self._create_group(group_type, volume_type)
-
-        # Create volume
-        self.create_volume(volume_type=volume_type['id'], group_id=grp['id'])
-
-        # Create Group from Group
-        grp_name2 = data_utils.rand_name('Group_from_grp')
-        grp2 = self.groups_client.create_group_from_source(
-            source_group_id=grp['id'], name=grp_name2)['group']
-        self.addCleanup(self._delete_group, grp2['id'])
-        self.assertEqual(grp_name2, grp2['name'])
-        vols = self.volumes_client.list_volumes(
-            detail=True)['volumes']
-        for vol in vols:
-            if vol['group_id'] == grp2['id']:
-                waiters.wait_for_volume_resource_status(
-                    self.volumes_client, vol['id'], 'available')
-        waiters.wait_for_volume_resource_status(
-            self.groups_client, grp2['id'], 'available')
 
     @decorators.idempotent_id('4a8a6fd2-8b3b-4641-8f54-6a6f99320006')
     def test_group_update(self):
@@ -268,7 +102,8 @@ class GroupsTest(base.BaseVolumeAdminTest):
         group_type = self.create_group_type()
 
         # Create Group
-        grp = self._create_group(group_type, volume_type)
+        grp = self.create_group(group_type=group_type['id'],
+                                volume_types=[volume_type['id']])
 
         # Create volumes
         grp_vols = []
@@ -296,12 +131,8 @@ class GroupsTest(base.BaseVolumeAdminTest):
         self.assertEqual(new_desc, grp['description'])
 
         # Get volumes in the group
-        vols = self.volumes_client.list_volumes(
-            detail=True)['volumes']
-        grp_vols = []
-        for vol in vols:
-            if vol['group_id'] == grp['id']:
-                grp_vols.append(vol)
+        vols = self.volumes_client.list_volumes(detail=True)['volumes']
+        grp_vols = [v for v in vols if v['group_id'] == grp['id']]
         self.assertEqual(1, len(grp_vols))
 
         # Add a volume to the group
@@ -313,10 +144,69 @@ class GroupsTest(base.BaseVolumeAdminTest):
             self.groups_client, grp['id'], 'available')
 
         # Get volumes in the group
-        vols = self.volumes_client.list_volumes(
-            detail=True)['volumes']
-        grp_vols = []
-        for vol in vols:
-            if vol['group_id'] == grp['id']:
-                grp_vols.append(vol)
+        vols = self.volumes_client.list_volumes(detail=True)['volumes']
+        grp_vols = [v for v in vols if v['group_id'] == grp['id']]
         self.assertEqual(2, len(grp_vols))
+
+
+class GroupsV314Test(base.BaseVolumeAdminTest):
+    _api_version = 3
+    min_microversion = '3.14'
+    max_microversion = 'latest'
+
+    @decorators.idempotent_id('2424af8c-7851-4888-986a-794b10c3210e')
+    def test_create_group_from_group(self):
+        # Create volume type
+        volume_type = self.create_volume_type()
+
+        # Create group type
+        group_type = self.create_group_type()
+
+        # Create Group
+        grp = self.create_group(group_type=group_type['id'],
+                                volume_types=[volume_type['id']])
+
+        # Create volume
+        self.create_volume(volume_type=volume_type['id'], group_id=grp['id'])
+
+        # Create Group from Group
+        grp_name2 = data_utils.rand_name('Group_from_grp')
+        grp2 = self.groups_client.create_group_from_source(
+            source_group_id=grp['id'], name=grp_name2)['group']
+        self.addCleanup(self.delete_group, grp2['id'])
+        self.assertEqual(grp_name2, grp2['name'])
+        vols = self.volumes_client.list_volumes(detail=True)['volumes']
+        for vol in vols:
+            if vol['group_id'] == grp2['id']:
+                waiters.wait_for_volume_resource_status(
+                    self.volumes_client, vol['id'], 'available')
+        waiters.wait_for_volume_resource_status(
+            self.groups_client, grp2['id'], 'available')
+
+
+class GroupsV320Test(base.BaseVolumeAdminTest):
+    _api_version = 3
+    min_microversion = '3.20'
+    max_microversion = 'latest'
+
+    @decorators.idempotent_id('b20c696b-0cbc-49a5-8b3a-b1fb9338f45c')
+    def test_reset_group_status(self):
+        # Create volume type
+        volume_type = self.create_volume_type()
+
+        # Create group type
+        group_type = self.create_group_type()
+
+        # Create group
+        group = self.create_group(group_type=group_type['id'],
+                                  volume_types=[volume_type['id']])
+
+        # Reset group status
+        self.addCleanup(waiters.wait_for_volume_resource_status,
+                        self.groups_client, group['id'], 'available')
+        self.addCleanup(self.admin_groups_client.reset_group_status,
+                        group['id'], 'available')
+        for status in ['creating', 'available', 'error']:
+            self.admin_groups_client.reset_group_status(group['id'], status)
+            waiters.wait_for_volume_resource_status(
+                self.groups_client, group['id'], status)

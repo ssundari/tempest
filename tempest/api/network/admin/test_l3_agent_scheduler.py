@@ -13,10 +13,10 @@
 #    under the License.
 
 from tempest.api.network import base
+from tempest.common import utils
 from tempest import config
 from tempest.lib import decorators
 from tempest.lib import exceptions
-from tempest import test
 
 CONF = config.CONF
 AGENT_TYPE = 'L3 agent'
@@ -41,7 +41,7 @@ class L3AgentSchedulerTestJSON(base.BaseAdminNetworkTest):
     @classmethod
     def skip_checks(cls):
         super(L3AgentSchedulerTestJSON, cls).skip_checks()
-        if not test.is_extension_enabled('l3_agent_scheduler', 'network'):
+        if not utils.is_extension_enabled('l3_agent_scheduler', 'network'):
             msg = "L3 Agent Scheduler Extension not enabled."
             raise cls.skipException(msg)
 
@@ -51,7 +51,8 @@ class L3AgentSchedulerTestJSON(base.BaseAdminNetworkTest):
         agents = cls.admin_agents_client.list_agents(
             agent_type=AGENT_TYPE)['agents']
         for agent in agents:
-            if agent['configurations']['agent_mode'] in AGENT_MODES:
+            if (agent['configurations']['agent_mode'] in AGENT_MODES and
+                agent['alive']):
                 cls.agent = agent
                 break
         else:

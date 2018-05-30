@@ -11,22 +11,22 @@
 #    under the License.
 
 from tempest.api.identity import base
+from tempest.common import utils
 from tempest.lib.common.utils import data_utils
 from tempest.lib import decorators
-from tempest import test
 
 
-class BaseInheritsV3Test(base.BaseIdentityV3AdminTest):
+class InheritsV3TestJSON(base.BaseIdentityV3AdminTest):
 
     @classmethod
     def skip_checks(cls):
-        super(BaseInheritsV3Test, cls).skip_checks()
-        if not test.is_extension_enabled('OS-INHERIT', 'identity'):
+        super(InheritsV3TestJSON, cls).skip_checks()
+        if not utils.is_extension_enabled('OS-INHERIT', 'identity'):
             raise cls.skipException("Inherits aren't enabled")
 
     @classmethod
     def resource_setup(cls):
-        super(BaseInheritsV3Test, cls).resource_setup()
+        super(InheritsV3TestJSON, cls).resource_setup()
         u_name = data_utils.rand_name('user-')
         u_desc = '%s description' % u_name
         u_email = '%s@testmail.tm' % u_name
@@ -36,29 +36,23 @@ class BaseInheritsV3Test(base.BaseIdentityV3AdminTest):
             data_utils.rand_name('project-'),
             description=data_utils.rand_name('project-desc-'),
             domain_id=cls.domain['id'])['project']
+        cls.addClassResourceCleanup(cls.projects_client.delete_project,
+                                    cls.project['id'])
         cls.group = cls.groups_client.create_group(
             name=data_utils.rand_name('group-'), project_id=cls.project['id'],
             domain_id=cls.domain['id'])['group']
+        cls.addClassResourceCleanup(cls.groups_client.delete_group,
+                                    cls.group['id'])
         cls.user = cls.users_client.create_user(
             name=u_name, description=u_desc, password=u_password,
             email=u_email, project_id=cls.project['id'],
             domain_id=cls.domain['id'])['user']
-
-    @classmethod
-    def resource_cleanup(cls):
-        cls.groups_client.delete_group(cls.group['id'])
-        cls.users_client.delete_user(cls.user['id'])
-        cls.projects_client.delete_project(cls.project['id'])
-        cls.domains_client.update_domain(cls.domain['id'], enabled=False)
-        cls.domains_client.delete_domain(cls.domain['id'])
-        super(BaseInheritsV3Test, cls).resource_cleanup()
+        cls.addClassResourceCleanup(cls.users_client.delete_user,
+                                    cls.user['id'])
 
     def _list_assertions(self, body, fetched_role_ids, role_id):
         self.assertEqual(len(body), 1)
         self.assertIn(role_id, fetched_role_ids)
-
-
-class InheritsV3TestJSON(BaseInheritsV3Test):
 
     @decorators.idempotent_id('4e6f0366-97c8-423c-b2be-41eae6ac91c8')
     def test_inherit_assign_list_check_revoke_roles_on_domains_user(self):

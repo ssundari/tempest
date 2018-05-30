@@ -128,6 +128,8 @@ def create_test_server(clients, validatable=False, validation_resources=None,
                    "this stage.")
             raise ValueError(msg)
 
+        LOG.debug("Provisioning test server with validation resources %s",
+                  validation_resources)
         if 'security_groups' in kwargs:
             kwargs['security_groups'].append(
                 {'name': validation_resources['security_group']['name']})
@@ -198,9 +200,27 @@ def create_test_server(clients, validatable=False, validation_resources=None,
         body = rest_client.ResponseBody(body.response, body['server'])
         servers = [body]
 
-    # The name of the method to associate a floating IP to as server is too
-    # long for PEP8 compliance so:
-    assoc = clients.compute_floating_ips_client.associate_floating_ip_to_server
+    def _setup_validation_fip():
+        if CONF.service_available.neutron:
+            ifaces = clients.interfaces_client.list_interfaces(server['id'])
+            validation_port = None
+            for iface in ifaces['interfaceAttachments']:
+                if iface['net_id'] == tenant_network['id']:
+                    validation_port = iface['port_id']
+                    break
+            if not validation_port:
+                # NOTE(artom) This will get caught by the catch-all clause in
+                # the wait_until loop below
+                raise ValueError('Unable to setup floating IP for validation: '
+                                 'port not found on tenant network')
+            clients.floating_ips_client.update_floatingip(
+                validation_resources['floating_ip']['id'],
+                port_id=validation_port)
+        else:
+            fip_client = clients.compute_floating_ips_client
+            fip_client.associate_floating_ip_to_server(
+                floating_ip=validation_resources['floating_ip']['ip'],
+                server_id=servers[0]['id'])
 
     if wait_until:
         for server in servers:
@@ -209,12 +229,10 @@ def create_test_server(clients, validatable=False, validation_resources=None,
                     clients.servers_client, server['id'], wait_until)
 
                 # Multiple validatable servers are not supported for now. Their
-                # creation will fail with the condition above (l.58).
+                # creation will fail with the condition above.
                 if CONF.validation.run_validation and validatable:
                     if CONF.validation.connect_method == 'floating':
-                        assoc(floating_ip=validation_resources[
-                              'floating_ip']['ip'],
-                              server_id=servers[0]['id'])
+                        _setup_validation_fip()
 
             except Exception:
                 with excutils.save_and_reraise_exception():
@@ -271,13 +289,26 @@ def shelve_server(servers_client, server_id, force_shelve_offload=False):
 
 def create_websocket(url):
     url = urlparse.urlparse(url)
-    if url.scheme == 'https':
-        client_socket = ssl.wrap_socket(socket.socket(socket.AF_INET,
-                                                      socket.SOCK_STREAM))
+
+    # NOTE(mnaser): It is possible that there is no port specified, so fall
+    #               back to the default port based on the scheme.
+    port = url.port or (443 if url.scheme == 'https' else 80)
+
+    for res in socket.getaddrinfo(url.hostname, port,
+                                  socket.AF_UNSPEC, socket.SOCK_STREAM):
+        af, socktype, proto, _, sa = res
+        client_socket = socket.socket(af, socktype, proto)
+        if url.scheme == 'https':
+            client_socket = ssl.wrap_socket(client_socket)
+        client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            client_socket.connect(sa)
+        except socket.error:
+            client_socket.close()
+            continue
+        break
     else:
-        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    client_socket.connect((url.hostname, url.port))
+        raise socket.error('WebSocket creation failed')
     # Turn the Socket into a WebSocket to do the communication
     return _WebSocket(client_socket, url)
 
@@ -356,7 +387,12 @@ class _WebSocket(object):
         """Upgrade the HTTP connection to a WebSocket and verify."""
         # The real request goes to the /websockify URI always
         reqdata = 'GET /websockify HTTP/1.1\r\n'
-        reqdata += 'Host: %s:%s\r\n' % (url.hostname, url.port)
+        reqdata += 'Host: %s' % url.hostname
+        # Add port only if we have one specified
+        if url.port:
+            reqdata += ':%s' % url.port
+        # Line-ending for Host header
+        reqdata += '\r\n'
         # Tell the HTTP Server to Upgrade the connection to a WebSocket
         reqdata += 'Upgrade: websocket\r\nConnection: Upgrade\r\n'
         # The token=xxx is sent as a Cookie not in the URI

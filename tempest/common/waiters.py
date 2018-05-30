@@ -179,15 +179,13 @@ def wait_for_image_status(client, image_id, status):
     raise lib_exc.TimeoutException(message)
 
 
-def wait_for_volume_resource_status(client, resource_id, statuses):
-    """Waits for a volume resource to reach any of the specified statuses.
+def wait_for_volume_resource_status(client, resource_id, status):
+    """Waits for a volume resource to reach a given status.
 
     This function is a common function for volume, snapshot and backup
     resources. The function extracts the name of the desired resource from
     the client class name of the resource.
     """
-    if not isinstance(statuses, list):
-        statuses = [statuses]
     resource_name = re.findall(
         r'(volume|group-snapshot|snapshot|backup|group)',
         client.resource_type)[-1].replace('-', '_')
@@ -195,11 +193,11 @@ def wait_for_volume_resource_status(client, resource_id, statuses):
     resource_status = show_resource(resource_id)[resource_name]['status']
     start = int(time.time())
 
-    while resource_status not in statuses:
+    while resource_status != status:
         time.sleep(client.build_interval)
         resource_status = show_resource(resource_id)[
             '{}'.format(resource_name)]['status']
-        if resource_status == 'error' and resource_status not in statuses:
+        if resource_status == 'error' and resource_status != status:
             raise exceptions.VolumeResourceBuildErrorException(
                 resource_name=resource_name, resource_id=resource_id)
         if resource_name == 'volume' and resource_status == 'error_restoring':
@@ -208,9 +206,11 @@ def wait_for_volume_resource_status(client, resource_id, statuses):
         if int(time.time()) - start >= client.build_timeout:
             message = ('%s %s failed to reach %s status (current %s) '
                        'within the required time (%s s).' %
-                       (resource_name, resource_id, statuses, resource_status,
+                       (resource_name, resource_id, status, resource_status,
                         client.build_timeout))
             raise lib_exc.TimeoutException(message)
+    LOG.info('%s %s reached %s after waiting for %f seconds',
+             resource_name, resource_id, status, time.time() - start)
 
 
 def wait_for_volume_retype(client, volume_id, new_volume_type):
@@ -287,3 +287,24 @@ def wait_for_interface_status(client, server_id, port_id, status):
             raise lib_exc.TimeoutException(message)
 
     return body
+
+
+def wait_for_interface_detach(client, server_id, port_id):
+    """Waits for an interface to be detached from a server."""
+    body = client.list_interfaces(server_id)['interfaceAttachments']
+    ports = [iface['port_id'] for iface in body]
+    start = int(time.time())
+
+    while port_id in ports:
+        time.sleep(client.build_interval)
+        body = client.list_interfaces(server_id)['interfaceAttachments']
+        ports = [iface['port_id'] for iface in body]
+        if port_id not in ports:
+            return body
+
+        timed_out = int(time.time()) - start >= client.build_timeout
+        if timed_out:
+            message = ('Interface %s failed to detach from server %s within '
+                       'the required time (%s s)' % (port_id, server_id,
+                                                     client.build_timeout))
+            raise lib_exc.TimeoutException(message)

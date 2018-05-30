@@ -15,7 +15,6 @@
 import functools
 import uuid
 
-import debtcollector.removals
 from oslo_log import log as logging
 import six
 import testtools
@@ -31,7 +30,7 @@ def skip_because(*args, **kwargs):
     """
     def decorator(f):
         @functools.wraps(f)
-        def wrapper(self, *func_args, **func_kwargs):
+        def wrapper(*func_args, **func_kwargs):
             skip = False
             if "condition" in kwargs:
                 if kwargs["condition"] is True:
@@ -43,7 +42,7 @@ def skip_because(*args, **kwargs):
                     raise ValueError('bug must be a valid bug number')
                 msg = "Skipped until Bug: %s is resolved." % kwargs["bug"]
                 raise testtools.TestCase.skipException(msg)
-            return f(self, *func_args, **func_kwargs)
+            return f(*func_args, **func_kwargs)
         return wrapper
     return decorator
 
@@ -56,9 +55,9 @@ def related_bug(bug, status_code=None):
     """
     def decorator(f):
         @functools.wraps(f)
-        def wrapper(self, *func_args, **func_kwargs):
+        def wrapper(*func_args, **func_kwargs):
             try:
-                return f(self, *func_args, **func_kwargs)
+                return f(*func_args, **func_kwargs)
             except Exception as exc:
                 exc_status_code = getattr(exc, 'status_code', None)
                 if status_code is None or status_code == exc_status_code:
@@ -85,25 +84,6 @@ def idempotent_id(id):
             f.__doc__ = 'Test idempotent id: %s' % id
         return f
     return decorator
-
-
-@debtcollector.removals.remove(removal_version='Queen')
-class skip_unless_attr(object):
-    """Decorator to skip tests if a specified attr does not exists or False"""
-    def __init__(self, attr, msg=None):
-        self.attr = attr
-        self.message = msg or ("Test case attribute %s not found "
-                               "or False") % attr
-
-    def __call__(self, func):
-        @functools.wraps(func)
-        def _skipper(*args, **kw):
-            """Wrapped skipper function."""
-            testobj = args[0]
-            if not getattr(testobj, self.attr, False):
-                raise testtools.TestCase.skipException(self.message)
-            func(*args, **kw)
-        return _skipper
 
 
 def attr(**kwargs):

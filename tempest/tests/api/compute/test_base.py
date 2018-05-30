@@ -37,14 +37,16 @@ class TestBaseV2ComputeTest(base.TestCase):
         fake_image = mock.Mock(response={'location': image_id})
         compute_images_client.create_image.return_value = fake_image
         # call the utility method
-        image = compute_base.BaseV2ComputeTest.create_image_from_server(
-            mock.sentinel.server_id, name='fake-snapshot-name')
+        cleanup_path = 'tempest.test.BaseTestCase.addClassResourceCleanup'
+        with mock.patch(cleanup_path) as mock_cleanup:
+            image = compute_base.BaseV2ComputeTest.create_image_from_server(
+                mock.sentinel.server_id, name='fake-snapshot-name')
         self.assertEqual(fake_image, image)
         # make our assertions
         compute_images_client.create_image.assert_called_once_with(
             mock.sentinel.server_id, name='fake-snapshot-name')
-        self.assertEqual(1, len(compute_base.BaseV2ComputeTest.images))
-        self.assertEqual(image_id, compute_base.BaseV2ComputeTest.images[0])
+        mock_cleanup.assert_called_once()
+        self.assertIn(image_id, mock_cleanup.call_args[0])
 
     @mock.patch.multiple(compute_base.BaseV2ComputeTest,
                          compute_images_client=mock.DEFAULT,
@@ -171,3 +173,20 @@ class TestBaseV2ComputeTest(base.TestCase):
         # make our assertions
         wait_for_image_status.assert_called_once_with(
             compute_images_client, image_id, 'SAVING')
+
+    def _test_version_compatible(self, max_version, expected=True):
+        actual = (compute_base.BaseV2ComputeTest.
+                  is_requested_microversion_compatible(max_version))
+        self.assertEqual(expected, actual)
+
+    def test_check_lower_version(self):
+        compute_base.BaseV2ComputeTest.request_microversion = '2.8'
+        self._test_version_compatible('2.40')
+
+    def test_check_euqal_version(self):
+        compute_base.BaseV2ComputeTest.request_microversion = '2.40'
+        self._test_version_compatible('2.40')
+
+    def test_check_higher_version(self):
+        compute_base.BaseV2ComputeTest.request_microversion = '2.41'
+        self._test_version_compatible('2.40', expected=False)
