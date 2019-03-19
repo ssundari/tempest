@@ -63,7 +63,7 @@ class ServersOnMultiNodesTest(base.BaseV2ComputeAdminTest):
             self.assertIn(server['id'], server_group['members'])
             hosts[server['id']] = self._get_host(server['id'])
 
-        return hosts
+        return hosts, servers
 
     @decorators.idempotent_id('26a9d5df-6890-45f2-abc4-a659290cb130')
     @testtools.skipUnless(
@@ -75,6 +75,7 @@ class ServersOnMultiNodesTest(base.BaseV2ComputeAdminTest):
                                            wait_until='ACTIVE')['id']
         host02 = self._get_host(server02)
         self.assertEqual(self.host01, host02)
+        self.delete_server(server02)
 
     @decorators.idempotent_id('cc7ca884-6e3e-42a3-a92f-c522fcf25e8e')
     @testtools.skipUnless(
@@ -86,6 +87,7 @@ class ServersOnMultiNodesTest(base.BaseV2ComputeAdminTest):
                                            wait_until='ACTIVE')['id']
         host02 = self._get_host(server02)
         self.assertNotEqual(self.host01, host02)
+        self.delete_server(server02)
 
     @decorators.idempotent_id('7869cc84-d661-4e14-9f00-c18cdc89cf57')
     @testtools.skipUnless(
@@ -98,6 +100,7 @@ class ServersOnMultiNodesTest(base.BaseV2ComputeAdminTest):
                                            wait_until='ACTIVE')['id']
         host02 = self._get_host(server02)
         self.assertNotEqual(self.host01, host02)
+        self.delete_server(server02)
 
     @decorators.idempotent_id('f8bd0867-e459-45f5-ba53-59134552fe04')
     @testtools.skipUnless(
@@ -109,10 +112,12 @@ class ServersOnMultiNodesTest(base.BaseV2ComputeAdminTest):
         Creates two servers in an anti-affinity server group and
         asserts the servers are in the group and on different hosts.
         """
-        hosts = self._create_servers_with_group('anti-affinity')
+        hosts, servers = self._create_servers_with_group('anti-affinity')
         hostnames = hosts.values()
         self.assertNotEqual(hostnames[0], hostnames[1],
                             'Servers are on the same host: %s' % hosts)
+        for server in servers:
+            self.delete_server(server['id'])
 
     @decorators.idempotent_id('9d2e924a-baf4-11e7-b856-fa163e65f5ce')
     @testtools.skipUnless(
@@ -124,7 +129,9 @@ class ServersOnMultiNodesTest(base.BaseV2ComputeAdminTest):
         Creates two servers in an affinity server group and
         asserts the servers are in the group and on same host.
         """
-        hosts = self._create_servers_with_group('affinity')
+        hosts, servers = self._create_servers_with_group('affinity')
         hostnames = hosts.values()
         self.assertEqual(hostnames[0], hostnames[1],
                          'Servers are on the different hosts: %s' % hosts)
+        for server in servers:
+            self.delete_server(server['id'])
