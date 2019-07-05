@@ -22,8 +22,6 @@ from tempest.lib import exceptions as lib_exc
 
 class SnapshotsClient(rest_client.RestClient):
     """Client class to send CRUD Volume Snapshot V3 API requests."""
-    api_version = "v3"
-    create_resp = 202
 
     def list_snapshots(self, detail=False, **params):
         """List all the snapshot.
@@ -67,7 +65,7 @@ class SnapshotsClient(rest_client.RestClient):
         post_body = json.dumps({'snapshot': kwargs})
         resp, body = self.post('snapshots', post_body)
         body = json.loads(body)
-        self.expected_success(self.create_resp, resp.status)
+        self.expected_success(202, resp.status)
         return rest_client.ResponseBody(resp, body)
 
     def update_snapshot(self, snapshot_id, **kwargs):
@@ -114,12 +112,12 @@ class SnapshotsClient(rest_client.RestClient):
         return rest_client.ResponseBody(resp, body)
 
     def update_snapshot_status(self, snapshot_id, **kwargs):
-        """Update the specified snapshot's status."""
-        # TODO(gmann): api-site doesn't contain doc ref
-        # for this API. After fixing the api-site, we need to
-        # add the link here.
-        # Bug https://bugs.launchpad.net/openstack-api-site/+bug/1532645
+        """Update status of a snapshot.
 
+        For a full list of available parameters, please refer to the official
+        API reference:
+        https://developer.openstack.org/api-ref/block-storage/v3/#update-status-of-a-snapshot
+        """
         post_body = json.dumps({'os-update_snapshot_status': kwargs})
         url = 'snapshots/%s/action' % snapshot_id
         resp, body = self.post(url, post_body)
@@ -176,11 +174,12 @@ class SnapshotsClient(rest_client.RestClient):
         return rest_client.ResponseBody(resp, body)
 
     def update_snapshot_metadata_item(self, snapshot_id, id, **kwargs):
-        """Update metadata item for the snapshot."""
-        # TODO(piyush): Current api-site doesn't contain this API description.
-        # After fixing the api-site, we need to fix here also for putting the
-        # link to api-site.
-        # LP: https://bugs.launchpad.net/openstack-api-site/+bug/1529064
+        """Update metadata for the snapshot for a specific key.
+
+        For a full list of available parameters, please refer to the official
+        API reference:
+        https://developer.openstack.org/api-ref/block-storage/v3/#update-a-snapshot-s-metadata-for-a-specific-key
+        """
         put_body = json.dumps(kwargs)
         url = "snapshots/%s/metadata/%s" % (snapshot_id, id)
         resp, body = self.put(url, put_body)

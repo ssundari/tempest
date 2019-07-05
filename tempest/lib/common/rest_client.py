@@ -27,6 +27,7 @@ from six.moves import urllib
 
 from tempest.lib.common import http
 from tempest.lib.common import jsonschema_validator
+from tempest.lib.common import profiler
 from tempest.lib.common.utils import test_utils
 from tempest.lib import exceptions
 
@@ -70,6 +71,7 @@ class RestClient(object):
     :param str http_timeout: Timeout in seconds to wait for the http request to
                              return
     :param str proxy_url: http proxy url to use.
+    :param bool follow_redirects: Set to false to stop following redirects.
     """
 
     # The version of the API this client implements
@@ -82,7 +84,7 @@ class RestClient(object):
                  build_interval=1, build_timeout=60,
                  disable_ssl_certificate_validation=False, ca_certs=None,
                  trace_requests='', name=None, http_timeout=None,
-                 proxy_url=None):
+                 proxy_url=None, follow_redirects=True):
         self.auth_provider = auth_provider
         self.service = service
         self.region = region
@@ -107,11 +109,11 @@ class RestClient(object):
             self.http_obj = http.ClosingProxyHttp(
                 proxy_url,
                 disable_ssl_certificate_validation=dscv, ca_certs=ca_certs,
-                timeout=http_timeout)
+                timeout=http_timeout, follow_redirects=follow_redirects)
         else:
             self.http_obj = http.ClosingHttp(
                 disable_ssl_certificate_validation=dscv, ca_certs=ca_certs,
-                timeout=http_timeout)
+                timeout=http_timeout, follow_redirects=follow_redirects)
 
     def get_headers(self, accept_type=None, send_type=None):
         """Return the default headers which will be used with outgoing requests
@@ -130,8 +132,10 @@ class RestClient(object):
             accept_type = 'json'
         if send_type is None:
             send_type = 'json'
-        return {'Content-Type': 'application/%s' % send_type,
-                'Accept': 'application/%s' % accept_type}
+        headers = {'Content-Type': 'application/%s' % send_type,
+                   'Accept': 'application/%s' % accept_type}
+        headers.update(profiler.serialize_as_http_headers())
+        return headers
 
     def __str__(self):
         STRING_LIMIT = 80
@@ -281,7 +285,7 @@ class RestClient(object):
     def get(self, url, headers=None, extra_headers=False):
         """Send a HTTP GET request using keystone service catalog and auth
 
-        :param str url: the relative url to send the post request to
+        :param str url: the relative url to send the get request to
         :param dict headers: The headers to use for the request
         :param bool extra_headers: Boolean value than indicates if the headers
                                    returned by the get_headers() method are to
@@ -296,7 +300,7 @@ class RestClient(object):
     def delete(self, url, headers=None, body=None, extra_headers=False):
         """Send a HTTP DELETE request using keystone service catalog and auth
 
-        :param str url: the relative url to send the post request to
+        :param str url: the relative url to send the delete request to
         :param dict headers: The headers to use for the request
         :param dict body: the request body
         :param bool extra_headers: Boolean value than indicates if the headers
@@ -312,7 +316,7 @@ class RestClient(object):
     def patch(self, url, body, headers=None, extra_headers=False):
         """Send a HTTP PATCH request using keystone service catalog and auth
 
-        :param str url: the relative url to send the post request to
+        :param str url: the relative url to send the patch request to
         :param dict body: the request body
         :param dict headers: The headers to use for the request
         :param bool extra_headers: Boolean value than indicates if the headers
@@ -328,7 +332,7 @@ class RestClient(object):
     def put(self, url, body, headers=None, extra_headers=False, chunked=False):
         """Send a HTTP PUT request using keystone service catalog and auth
 
-        :param str url: the relative url to send the post request to
+        :param str url: the relative url to send the put request to
         :param dict body: the request body
         :param dict headers: The headers to use for the request
         :param bool extra_headers: Boolean value than indicates if the headers
@@ -345,7 +349,7 @@ class RestClient(object):
     def head(self, url, headers=None, extra_headers=False):
         """Send a HTTP HEAD request using keystone service catalog and auth
 
-        :param str url: the relative url to send the post request to
+        :param str url: the relative url to send the head request to
         :param dict headers: The headers to use for the request
         :param bool extra_headers: Boolean value than indicates if the headers
                                    returned by the get_headers() method are to
@@ -360,7 +364,7 @@ class RestClient(object):
     def copy(self, url, headers=None, extra_headers=False):
         """Send a HTTP COPY request using keystone service catalog and auth
 
-        :param str url: the relative url to send the post request to
+        :param str url: the relative url to send the copy request to
         :param dict headers: The headers to use for the request
         :param bool extra_headers: Boolean value than indicates if the headers
                                    returned by the get_headers() method are to
@@ -373,7 +377,7 @@ class RestClient(object):
         return self.request('COPY', url, extra_headers, headers)
 
     def get_versions(self):
-        """Get the versions on a endpoint from the keystone catalog
+        """Get the versions on an endpoint from the keystone catalog
 
         This method will make a GET request on the baseurl from the keystone
         catalog to return a list of API versions. It is expected that a GET
@@ -416,6 +420,8 @@ class RestClient(object):
                           resp_body=None, extra=None):
         if 'X-Auth-Token' in req_headers:
             req_headers['X-Auth-Token'] = '<omitted>'
+        if 'X-Subject-Token' in req_headers:
+            req_headers['X-Subject-Token'] = '<omitted>'
         # A shallow copy is sufficient
         resp_log = resp.copy()
         if 'x-subject-token' in resp_log:
@@ -523,7 +529,7 @@ class RestClient(object):
         if (resp.status == 205 and
             0 != len(set(resp.keys()) - set(('status',)) -
                      self.response_header_lc - self.general_header_lc)):
-                        raise exceptions.ResponseWithEntity()
+            raise exceptions.ResponseWithEntity()
         # NOTE(afazekas)
         # Now the swift sometimes (delete not empty container)
         # returns with non json error response, we can create new rest class
@@ -568,8 +574,10 @@ class RestClient(object):
 
         :param str url: Full url to send the request
         :param str method: The HTTP verb to use for the request
-        :param str headers: Headers to use for the request if none are specifed
-                            the headers
+        :param dict headers: Headers to use for the request. If none are
+                             specified, then the headers returned from the
+                             get_headers() method are used. If the request
+                             explicitly requires no headers use an empty dict.
         :param str body: Body to send with the request
         :param bool chunked: sends the body with chunked encoding
         :rtype: tuple
@@ -603,8 +611,8 @@ class RestClient(object):
                                    returned by the get_headers() method are to
                                    be used but additional headers are needed in
                                    the request pass them in as a dict.
-        :param dict headers: Headers to use for the request if none are
-                             specifed the headers returned from the
+        :param dict headers: Headers to use for the request. If none are
+                             specified, then the headers returned from the
                              get_headers() method are used. If the request
                              explicitly requires no headers use an empty dict.
         :param str body: Body to send with the request
@@ -621,10 +629,13 @@ class RestClient(object):
         :raises Gone: If a 410 response code is received
         :raises Conflict: If a 409 response code is received
         :raises PreconditionFailed: If a 412 response code is received
-        :raises OverLimit: If a 413 response code is received and over_limit is
-                          not in the response body
+        :raises OverLimit: If a 413 response code is received and retry-after
+                           is not in the response body or its retry operation
+                           exceeds the limits defined by the server
         :raises RateLimitExceeded: If a 413 response code is received and
-                                   over_limit is in the response body
+                                   retry-after is in the response body and
+                                   its retry operation does not exceeds the
+                                   limits defined by the server
         :raises InvalidContentType: If a 415 response code is received
         :raises UnprocessableEntity: If a 422 response code is received
         :raises InvalidHTTPResponseBody: The response body wasn't valid JSON

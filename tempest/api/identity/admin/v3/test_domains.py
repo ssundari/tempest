@@ -121,11 +121,7 @@ class DomainsTestJSON(base.BaseIdentityV3AdminTest):
         # Create a domain with a user and a group in it
         domain = self.setup_test_domain()
         user = self.create_test_user(domain_id=domain['id'])
-        group = self.groups_client.create_group(
-            name=data_utils.rand_name('group'),
-            domain_id=domain['id'])['group']
-        self.addCleanup(test_utils.call_and_ignore_notfound_exc,
-                        self.groups_client.delete_group, group['id'])
+        group = self.setup_test_group(domain_id=domain['id'])
         # Delete the domain
         self.delete_domain(domain['id'])
         # Check the domain, its users and groups are gone
@@ -157,18 +153,3 @@ class DomainsTestJSON(base.BaseIdentityV3AdminTest):
         expected_data = {'name': d_name, 'enabled': True}
         self.assertEqual('', domain['description'])
         self.assertDictContainsSubset(expected_data, domain)
-
-
-class DefaultDomainTestJSON(base.BaseIdentityV3AdminTest):
-
-    @classmethod
-    def resource_setup(cls):
-        cls.domain_id = CONF.identity.default_domain_id
-        super(DefaultDomainTestJSON, cls).resource_setup()
-
-    @decorators.attr(type='smoke')
-    @decorators.idempotent_id('17a5de24-e6a0-4e4a-a9ee-d85b6e5612b5')
-    def test_default_domain_exists(self):
-        domain = self.domains_client.show_domain(self.domain_id)['domain']
-
-        self.assertTrue(domain['enabled'])

@@ -110,7 +110,7 @@ class TestChecker(object):
             for item in files:
                 if item.endswith('.py'):
                     module_name = '.'.join((root_package,
-                                           os.path.splitext(item)[0]))
+                                            os.path.splitext(item)[0]))
                     if not module_name.startswith(UNIT_TESTS_EXCLUDE):
                         modules.append(module_name)
         return modules
@@ -233,8 +233,8 @@ class TestChecker(object):
                           if self._is_test_case(module, node))
             for node in test_cases:
                 for subnode in filter(self._is_test_method, node.body):
-                        test_name = '%s.%s' % (node.name, subnode.name)
-                        tests[module_name]['tests'][test_name] = subnode
+                    test_name = '%s.%s' % (node.name, subnode.name)
+                    tests[module_name]['tests'][test_name] = subnode
         return tests
 
     @staticmethod
@@ -357,6 +357,7 @@ def run():
                  "failed\n"
                  "Run 'tox -v -e uuidgen' to automatically fix tests with\n"
                  "missing @decorators.idempotent_id decorators.")
+
 
 if __name__ == '__main__':
     run()

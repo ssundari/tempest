@@ -60,7 +60,7 @@ common_flavor_info = {
     },
     'additionalProperties': False,
     # 'OS-FLV-DISABLED', 'os-flavor-access', 'rxtx_factor' and
-    # 'OS-FLV-EXT-DATA' are API extensions. So they are not 'required'.
+    # 'OS-FLV-EXT-DATA' are API extensions, so they are not 'required'.
     'required': ['name', 'links', 'ram', 'vcpus', 'swap', 'disk', 'id']
 }
 
@@ -74,16 +74,12 @@ list_flavors_details = {
                 'items': common_flavor_info
             },
             # NOTE(gmann): flavors_links attribute is not necessary
-            # to be present always So it is not 'required'.
+            # to be present always so it is not 'required'.
             'flavors_links': parameter_types.links
         },
         'additionalProperties': False,
         'required': ['flavors']
     }
-}
-
-unset_flavor_extra_specs = {
-    'status_code': [200]
 }
 
 create_update_get_flavor_details = {

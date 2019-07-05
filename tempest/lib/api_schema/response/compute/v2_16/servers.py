@@ -122,7 +122,7 @@ server_detail['properties']['addresses']['patternProperties'][
     '^[a-zA-Z0-9-_.]+$']['items']['properties'].update({
         'OS-EXT-IPS:type': {'type': 'string'},
         'OS-EXT-IPS-MAC:mac_addr': parameter_types.mac_address})
-# NOTE(gmann)dd: Update OS-EXT-IPS:type and OS-EXT-IPS-MAC:mac_addr
+# NOTE(gmann): Update OS-EXT-IPS:type and OS-EXT-IPS-MAC:mac_addr
 # attributes in server address. Those are API extension,
 # and some environments return a response without
 # these attributes. So they are not 'required'.
@@ -157,4 +157,17 @@ list_servers_detail = {
     }
 }
 
+# NOTE(gmann): Below are the unchanged schema in this microversion. We need
+# to keep this schema in this file to have the generic way to select the
+# right schema based on self.schema_versions_info mapping in service client.
+# ****** Schemas unchanged since microversion 2.9 ******
 list_servers = copy.deepcopy(servers.list_servers)
+update_server = copy.deepcopy(servers.update_server)
+rebuild_server = copy.deepcopy(servers.rebuild_server)
+rebuild_server_with_admin_pass = copy.deepcopy(
+    servers.rebuild_server_with_admin_pass)
+show_server_diagnostics = copy.deepcopy(servers.show_server_diagnostics)
+get_remote_consoles = copy.deepcopy(servers.get_remote_consoles)
+attach_volume = copy.deepcopy(servers.attach_volume)
+show_volume_attachment = copy.deepcopy(servers.show_volume_attachment)
+list_volume_attachments = copy.deepcopy(servers.list_volume_attachments)

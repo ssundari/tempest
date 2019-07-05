@@ -33,8 +33,11 @@ class ImagesOneServerNegativeTestJSON(base.BaseV2ComputeTest):
 
     def tearDown(self):
         """Terminate test instances created after a test is executed."""
-        self.server_check_teardown()
         super(ImagesOneServerNegativeTestJSON, self).tearDown()
+        # NOTE(zhufl): Because server_check_teardown will raise Exception
+        # which will prevent other cleanup steps from being executed, so
+        # server_check_teardown should be called after super's tearDown.
+        self.server_check_teardown()
 
     def setUp(self):
         # NOTE(afazekas): Normally we use the same server with all test cases,
@@ -69,7 +72,10 @@ class ImagesOneServerNegativeTestJSON(base.BaseV2ComputeTest):
     @classmethod
     def setup_clients(cls):
         super(ImagesOneServerNegativeTestJSON, cls).setup_clients()
-        cls.client = cls.compute_images_client
+        if cls.is_requested_microversion_compatible('2.35'):
+            cls.client = cls.compute_images_client
+        else:
+            cls.client = cls.images_client
 
     @classmethod
     def resource_setup(cls):
@@ -119,7 +125,8 @@ class ImagesOneServerNegativeTestJSON(base.BaseV2ComputeTest):
         # Return an error if snapshot name over 255 characters is passed
 
         snapshot_name = ('a' * 256)
-        self.assertRaises(lib_exc.BadRequest, self.client.create_image,
+        self.assertRaises(lib_exc.BadRequest,
+                          self.compute_images_client.create_image,
                           self.server_id, name=snapshot_name)
 
     @decorators.attr(type=['negative'])

@@ -6,7 +6,7 @@ Tempest Coding Guide
 - Step 2: Read on
 
 Tempest Specific Commandments
-------------------------------
+-----------------------------
 
 - [T102] Cannot import OpenStack python clients in tempest/api &
   tempest/scenario tests
@@ -25,6 +25,10 @@ Tempest Specific Commandments
 - [T115] Check that admin tests should exist under admin path
 - [N322] Method's default argument shouldn't be mutable
 - [T116] Unsupported 'message' Exception attribute in PY3
+- [T117] Check negative tests have ``@decorators.attr(type=['negative'])``
+  applied.
+
+It is recommended to use ``tox -eautopep8`` before submitting a patch.
 
 Test Data/Configuration
 -----------------------
@@ -33,6 +37,30 @@ Test Data/Configuration
 - Clean up test data at the completion of each test
 - Use configuration files for values that will vary by environment
 
+Supported OpenStack Components
+------------------------------
+
+Tempest's :ref:`library` and :ref:`plugin interface <tempest_plugin>` can be
+leveraged to support integration testing for virtually any OpenStack component.
+
+However, Tempest only offers **in-tree** integration testing coverage for the
+following components:
+
+* Cinder
+* Glance
+* Keystone
+* Neutron
+* Nova
+* Swift
+
+Historically, Tempest offered in-tree testing for other components as well, but
+since the introduction of the `External Plugin Interface`_, Tempest's in-tree
+testing scope has been limited to the projects above. Integration tests for
+projects not included above should go into one of the
+`relevant plugin projects`_.
+
+.. _External Plugin Interface: https://specs.openstack.org/openstack/qa-specs/specs/tempest/implemented/tempest-external-plugin-interface.html
+.. _relevant plugin projects: https://docs.openstack.org/tempest/latest/plugin-registry.html#detected-plugins
 
 Exception Handling
 ------------------
@@ -106,7 +134,7 @@ Service tagging is used to specify which services are exercised by a particular
 test method. You specify the services with the ``tempest.common.utils.services``
 decorator. For example:
 
-@utils.services('compute', 'image')
+``@utils.services('compute', 'image')``
 
 Valid service tag names are the same as the list of directories in tempest.api
 that have tests.
@@ -117,6 +145,54 @@ indirectly through another service) that differs from the parent directory
 name. For example, any test that make an API call to a service other than Nova
 in ``tempest.api.compute`` would require a service tag for those services,
 however they do not need to be tagged as ``compute``.
+
+Test Attributes
+---------------
+Tempest leverages `test attributes`_ which are a simple but effective way of
+distinguishing between different "types" of API tests. A test can be "tagged"
+with such attributes using the ``decorators.attr`` decorator, for example::
+
+    @decorators.attr(type=['negative'])
+    def test_aggregate_create_aggregate_name_length_less_than_1(self):
+        [...]
+
+These test attributes can be used for test selection via regular expressions.
+For example, ``(?!.*\[.*\bslow\b.*\])(^tempest\.scenario)`` runs all the tests
+in the ``scenario`` test module, *except* for those tagged with the ``slow``
+attribute (via a negative lookahead in the regular expression). These
+attributes are used in Tempest's ``tox.ini`` as well as Tempest's Zuul job
+definitions for specifying particular batches of Tempest test suites to run.
+
+.. _test attributes: https://testtools.readthedocs.io/en/latest/for-test-authors.html?highlight=attr#test-attributes
+
+Negative Attribute
+^^^^^^^^^^^^^^^^^^
+The ``type='negative'`` attribute is used to signify that a test is a negative
+test, which is a test that handles invalid input gracefully. This attribute
+should be applied to all negative test scenarios.
+
+This attribute must be applied to each test that belongs to a negative test
+class, i.e. a test class name ending with "Negative.*" substring.
+
+Slow Attribute
+^^^^^^^^^^^^^^
+The ``type='slow'`` attribute is used to signify that a test takes a long time
+to run, relatively speaking. This attribute is usually applied to
+:ref:`scenario tests <scenario_field_guide>`, which involve a complicated
+series of API operations, the total runtime of which can be relatively long.
+This long runtime has performance implications on `Zuul`_ jobs, which is why
+the ``slow`` attribute is leveraged to run slow tests on a selective basis,
+to keep total `Zuul`_ job runtime down to a reasonable time frame.
+
+.. _Zuul: https://docs.openstack.org/infra/zuul/
+
+Smoke Attribute
+^^^^^^^^^^^^^^^
+The ``type='smoke'`` attribute is used to signify that a test is a so-called
+smoke test, which is a type of test that tests the most vital OpenStack
+functionality, like listing servers or flavors or creating volumes. The
+attribute should be sparingly applied to only the tests that sanity-check the
+most essential functionality of an OpenStack cloud.
 
 Test fixtures and resources
 ---------------------------
@@ -299,18 +375,19 @@ is required. If there is more than one test case in the class individual
 docstrings for the workflow in each test methods can be used instead. A good
 example of this would be::
 
-    class TestVolumeBootPattern(manager.ScenarioTest):
-        """
-        This test case attempts to reproduce the following steps:
+    class TestServerBasicOps(manager.ScenarioTest):
 
-         * Create in Cinder some bootable volume importing a Glance image
-         * Boot an instance from the bootable volume
-         * Write content to the volume
-         * Delete an instance and Boot a new instance from the volume
-         * Check written content in the instance
-         * Create a volume snapshot while the instance is running
-         * Boot an additional instance from the new snapshot based volume
-         * Check written content in the instance booted from snapshot
+        """The test suite for server basic operations
+
+        This smoke test case follows this basic set of operations:
+         * Create a keypair for use in launching an instance
+         * Create a security group to control network access in instance
+         * Add simple permissive rules to the security group
+         * Launch an instance
+         * Perform ssh to instance
+         * Verify metadata service
+         * Verify metadata on config_drive
+         * Terminate the instance
         """
 
 Test Identification with Idempotent ID
@@ -380,7 +457,7 @@ in which the feature isn't available. In DevStack, this can be accomplished
 by modifying Tempest's `lib installation script`_ for previous branches
 (because DevStack is branched).
 
-.. _lib installation script: http://git.openstack.org/cgit/openstack-dev/devstack/tree/lib/tempest
+.. _lib installation script: https://opendev.org/openstack/devstack/src/branch/master/lib/tempest
 
 2. Bug fix on core project needing Tempest changes
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

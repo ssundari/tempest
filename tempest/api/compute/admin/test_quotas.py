@@ -25,72 +25,20 @@ from tempest.lib import decorators
 LOG = logging.getLogger(__name__)
 
 
-class QuotasAdminTestJSON(base.BaseV2ComputeAdminTest):
+class QuotasAdminTestBase(base.BaseV2ComputeAdminTest):
     force_tenant_isolation = True
 
     def setUp(self):
         # NOTE(mriedem): Avoid conflicts with os-quota-class-sets tests.
         self.useFixture(fixtures.LockFixture('compute_quotas'))
-        super(QuotasAdminTestJSON, self).setUp()
+        super(QuotasAdminTestBase, self).setUp()
 
     @classmethod
     def setup_clients(cls):
-        super(QuotasAdminTestJSON, cls).setup_clients()
+        super(QuotasAdminTestBase, cls).setup_clients()
         cls.adm_client = cls.os_admin.quotas_client
 
-    @classmethod
-    def resource_setup(cls):
-        super(QuotasAdminTestJSON, cls).resource_setup()
-
-        # NOTE(afazekas): these test cases should always create and use a new
-        # tenant most of them should be skipped if we can't do that
-        cls.demo_tenant_id = cls.quotas_client.tenant_id
-
-        cls.default_quota_set = set(('injected_file_content_bytes',
-                                     'metadata_items', 'injected_files',
-                                     'ram', 'floating_ips',
-                                     'fixed_ips', 'key_pairs',
-                                     'injected_file_path_bytes',
-                                     'instances', 'security_group_rules',
-                                     'cores', 'security_groups'))
-
-    @decorators.idempotent_id('3b0a7c8f-cf58-46b8-a60c-715a32a8ba7d')
-    def test_get_default_quotas(self):
-        # Admin can get the default resource quota set for a tenant
-        expected_quota_set = self.default_quota_set | set(['id'])
-        quota_set = self.adm_client.show_default_quota_set(
-            self.demo_tenant_id)['quota_set']
-        self.assertEqual(quota_set['id'], self.demo_tenant_id)
-        for quota in expected_quota_set:
-            self.assertIn(quota, quota_set.keys())
-
-    @decorators.idempotent_id('55fbe2bf-21a9-435b-bbd2-4162b0ed799a')
-    def test_update_all_quota_resources_for_tenant(self):
-        # Admin can update all the resource quota limits for a tenant
-        default_quota_set = self.adm_client.show_default_quota_set(
-            self.demo_tenant_id)['quota_set']
-        new_quota_set = {'injected_file_content_bytes': 20480,
-                         'metadata_items': 256, 'injected_files': 10,
-                         'ram': 10240, 'floating_ips': 20, 'fixed_ips': 10,
-                         'key_pairs': 200, 'injected_file_path_bytes': 512,
-                         'instances': 20, 'security_group_rules': 20,
-                         'cores': 2, 'security_groups': 20,
-                         'server_groups': 20, 'server_group_members': 20}
-        # Update limits for all quota resources
-        quota_set = self.adm_client.update_quota_set(
-            self.demo_tenant_id,
-            force=True,
-            **new_quota_set)['quota_set']
-
-        default_quota_set.pop('id')
-        self.addCleanup(self.adm_client.update_quota_set,
-                        self.demo_tenant_id, **default_quota_set)
-        for quota in new_quota_set:
-            self.assertIn(quota, quota_set.keys())
-
-    # TODO(afazekas): merge these test cases
-    @decorators.idempotent_id('ce9e0815-8091-4abd-8345-7fe5b85faa1d')
-    def test_get_updated_quotas(self):
+    def _get_updated_quotas(self):
         # Verify that GET shows the updated quota set of project
         project_name = data_utils.rand_name('cpu_quota_project')
         project_desc = project_name + '-desc'
@@ -101,8 +49,11 @@ class QuotasAdminTestJSON(base.BaseV2ComputeAdminTest):
                         project_id)
 
         self.adm_client.update_quota_set(project_id, ram='5120')
-        quota_set = self.adm_client.show_quota_set(project_id)['quota_set']
-        self.assertEqual(5120, quota_set['ram'])
+        # Call show_quota_set with detail=true to cover the
+        # get_quota_set_details response schema for microversion tests
+        quota_set = self.adm_client.show_quota_set(
+            project_id, detail=True)['quota_set']
+        self.assertEqual(5120, quota_set['ram']['limit'])
 
         # Verify that GET shows the updated quota set of user
         user_name = data_utils.rand_name('cpu_quota_user')
@@ -121,6 +72,75 @@ class QuotasAdminTestJSON(base.BaseV2ComputeAdminTest):
         quota_set = self.adm_client.show_quota_set(
             project_id, user_id=user_id)['quota_set']
         self.assertEqual(2048, quota_set['ram'])
+
+    @classmethod
+    def resource_setup(cls):
+        super(QuotasAdminTestBase, cls).resource_setup()
+
+        # NOTE(afazekas): these test cases should always create and use a new
+        # tenant most of them should be skipped if we can't do that
+        cls.demo_tenant_id = cls.quotas_client.tenant_id
+
+        cls.default_quota_set = set(('metadata_items', 'ram', 'key_pairs',
+                                     'instances', 'cores',
+                                     'server_group_members', 'server_groups'))
+        if cls.is_requested_microversion_compatible('2.35'):
+            cls.default_quota_set = \
+                cls.default_quota_set | set(['fixed_ips', 'floating_ips',
+                                             'security_group_rules',
+                                             'security_groups'])
+        if cls.is_requested_microversion_compatible('2.56'):
+            cls.default_quota_set = \
+                cls.default_quota_set | set(['injected_file_content_bytes',
+                                             'injected_file_path_bytes',
+                                             'injected_files'])
+
+
+class QuotasAdminTestJSON(QuotasAdminTestBase):
+    @decorators.idempotent_id('3b0a7c8f-cf58-46b8-a60c-715a32a8ba7d')
+    def test_get_default_quotas(self):
+        # Admin can get the default resource quota set for a tenant
+        expected_quota_set = self.default_quota_set | set(['id'])
+        quota_set = self.adm_client.show_default_quota_set(
+            self.demo_tenant_id)['quota_set']
+        self.assertEqual(quota_set['id'], self.demo_tenant_id)
+        for quota in expected_quota_set:
+            self.assertIn(quota, quota_set.keys())
+
+    @decorators.idempotent_id('55fbe2bf-21a9-435b-bbd2-4162b0ed799a')
+    def test_update_all_quota_resources_for_tenant(self):
+        # Admin can update all the resource quota limits for a tenant
+        default_quota_set = self.adm_client.show_default_quota_set(
+            self.demo_tenant_id)['quota_set']
+        new_quota_set = {'metadata_items': 256, 'ram': 10240,
+                         'key_pairs': 200, 'instances': 20,
+                         'server_groups': 20,
+                         'server_group_members': 20, 'cores': 2}
+        if self.is_requested_microversion_compatible('2.35'):
+            new_quota_set.update({'fixed_ips': 10, 'floating_ips': 20,
+                                  'security_group_rules': 20,
+                                  'security_groups': 20})
+        if self.is_requested_microversion_compatible('2.56'):
+            new_quota_set.update({'injected_file_content_bytes': 20480,
+                                  'injected_file_path_bytes': 512,
+                                  'injected_files': 10})
+
+        # Update limits for all quota resources
+        quota_set = self.adm_client.update_quota_set(
+            self.demo_tenant_id,
+            force=True,
+            **new_quota_set)['quota_set']
+
+        default_quota_set.pop('id')
+        self.addCleanup(self.adm_client.update_quota_set,
+                        self.demo_tenant_id, **default_quota_set)
+        for quota in new_quota_set:
+            self.assertIn(quota, quota_set.keys())
+
+    # TODO(afazekas): merge these test cases
+    @decorators.idempotent_id('ce9e0815-8091-4abd-8345-7fe5b85faa1d')
+    def test_get_updated_quotas(self):
+        self._get_updated_quotas()
 
     @decorators.idempotent_id('389d04f0-3a41-405f-9317-e5f86e3c44f0')
     def test_delete_quota(self):
@@ -142,6 +162,30 @@ class QuotasAdminTestJSON(base.BaseV2ComputeAdminTest):
 
         quota_set_new = self.adm_client.show_quota_set(project_id)['quota_set']
         self.assertEqual(ram_default, quota_set_new['ram'])
+
+
+class QuotasAdminTestV236(QuotasAdminTestBase):
+    min_microversion = '2.36'
+    # NOTE(gmann): This test tests the Quota APIs response schema
+    # for 2.36 microversion. No specific assert or behaviour verification
+    # is needed.
+
+    @decorators.idempotent_id('4268b5c9-92e5-4adc-acf1-3a2798f3d803')
+    def test_get_updated_quotas(self):
+        # Checking Quota update, get, get details APIs response schema
+        self._get_updated_quotas()
+
+
+class QuotasAdminTestV257(QuotasAdminTestBase):
+    min_microversion = '2.57'
+    # NOTE(gmann): This test tests the Quota APIs response schema
+    # for 2.57 microversion. No specific assert or behaviour verification
+    # is needed.
+
+    @decorators.idempotent_id('e641e6c6-e86c-41a4-9e5c-9493c0ae47ad')
+    def test_get_updated_quotas(self):
+        # Checking Quota update, get, get details APIs response schema
+        self._get_updated_quotas()
 
 
 class QuotaClassesAdminTestJSON(base.BaseV2ComputeAdminTest):
@@ -168,7 +212,7 @@ class QuotaClassesAdminTestJSON(base.BaseV2ComputeAdminTest):
     # 'danger' flag.
     @decorators.idempotent_id('7932ab0f-5136-4075-b201-c0e2338df51a')
     def test_update_default_quotas(self):
-        LOG.debug("get the current 'default' quota class values")
+        # get the current 'default' quota class values
         body = (self.adm_client.show_quota_class_set('default')
                 ['quota_class_set'])
         self.assertEqual('default', body.pop('id'))
@@ -180,9 +224,14 @@ class QuotaClassesAdminTestJSON(base.BaseV2ComputeAdminTest):
             # there is a real chance that we go from -1 (unlimited)
             # to a very small number which causes issues.
             body[quota] = default + 100
-        LOG.debug("update limits for the default quota class set")
+        # update limits for the default quota class set
         update_body = self.adm_client.update_quota_class_set(
             'default', **body)['quota_class_set']
-        LOG.debug("assert that the response has all of the changed values")
+        # assert that the response has all of the changed values
         self.assertThat(update_body.items(),
+                        matchers.ContainsAll(body.items()))
+        # check quota values are changed
+        show_body = self.adm_client.show_quota_class_set(
+            'default')['quota_class_set']
+        self.assertThat(show_body.items(),
                         matchers.ContainsAll(body.items()))

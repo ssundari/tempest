@@ -90,9 +90,10 @@ class TestNetworkAdvancedServerOps(manager.NetworkScenarioTest):
         floating_ip_addr = floating_ip['floating_ip_address']
         # Check FloatingIP status before checking the connectivity
         self.check_floating_ip_status(floating_ip, 'ACTIVE')
-        self.check_public_network_connectivity(floating_ip_addr, username,
-                                               private_key, should_connect,
-                                               servers=[server])
+        self.check_vm_connectivity(floating_ip_addr, username,
+                                   private_key, should_connect,
+                                   'Public network connectivity check failed',
+                                   server)
 
     def _wait_server_status_and_check_network_connectivity(self, server,
                                                            keypair,
@@ -100,10 +101,6 @@ class TestNetworkAdvancedServerOps(manager.NetworkScenarioTest):
         waiters.wait_for_server_status(self.servers_client, server['id'],
                                        'ACTIVE')
         self._check_network_connectivity(server, keypair, floating_ip)
-
-    def _get_host_for_server(self, server_id):
-        body = self.admin_servers_client.show_server(server_id)['server']
-        return body['OS-EXT-SRV-ATTR:host']
 
     @decorators.idempotent_id('61f1aa9a-1573-410e-9054-afa557cab021')
     @decorators.attr(type='slow')
@@ -122,6 +119,7 @@ class TestNetworkAdvancedServerOps(manager.NetworkScenarioTest):
             server, keypair, floating_ip)
 
     @decorators.idempotent_id('7b6860c2-afa3-4846-9522-adeb38dfbe08')
+    @decorators.attr(type='slow')
     @utils.services('compute', 'network')
     def test_server_connectivity_reboot(self):
         keypair = self.create_keypair()
@@ -196,7 +194,14 @@ class TestNetworkAdvancedServerOps(manager.NetworkScenarioTest):
                                        'VERIFY_RESIZE')
         self.servers_client.confirm_resize_server(server['id'])
         server = self.servers_client.show_server(server['id'])['server']
-        self.assertEqual(resize_flavor, server['flavor']['id'])
+        # Nova API > 2.46 no longer includes flavor.id, and schema check
+        # will cover whether 'id' should be in flavor
+        if server['flavor'].get('id'):
+            self.assertEqual(resize_flavor, server['flavor']['id'])
+        else:
+            flavor = self.flavors_client.show_flavor(resize_flavor)['flavor']
+            for key in ['original_name', 'ram', 'vcpus', 'disk']:
+                self.assertEqual(flavor[key], server['flavor'][key])
         self._wait_server_status_and_check_network_connectivity(
             server, keypair, floating_ip)
 
@@ -212,7 +217,7 @@ class TestNetworkAdvancedServerOps(manager.NetworkScenarioTest):
         keypair = self.create_keypair()
         server = self._setup_server(keypair)
         floating_ip = self._setup_network(server, keypair)
-        src_host = self._get_host_for_server(server['id'])
+        src_host = self.get_host_for_server(server['id'])
         self._wait_server_status_and_check_network_connectivity(
             server, keypair, floating_ip)
 
@@ -222,10 +227,37 @@ class TestNetworkAdvancedServerOps(manager.NetworkScenarioTest):
         self.servers_client.confirm_resize_server(server['id'])
         self._wait_server_status_and_check_network_connectivity(
             server, keypair, floating_ip)
-        dst_host = self._get_host_for_server(server['id'])
+        dst_host = self.get_host_for_server(server['id'])
 
         self.assertNotEqual(src_host, dst_host)
 
+    @decorators.idempotent_id('03fd1562-faad-11e7-9ea0-fa163e65f5ce')
+    @testtools.skipUnless(CONF.compute_feature_enabled.live_migration,
+                          'Live migration is not available.')
+    @testtools.skipUnless(CONF.compute.min_compute_nodes > 1,
+                          'Less than 2 compute nodes, skipping multinode '
+                          'tests.')
+    @decorators.attr(type='slow')
+    @utils.services('compute', 'network')
+    def test_server_connectivity_live_migration(self):
+        keypair = self.create_keypair()
+        server = self._setup_server(keypair)
+        floating_ip = self._setup_network(server, keypair)
+        self._wait_server_status_and_check_network_connectivity(
+            server, keypair, floating_ip)
+
+        block_migration = (CONF.compute_feature_enabled.
+                           block_migration_for_live_migration)
+        self.admin_servers_client.live_migrate_server(
+            server['id'], host=None, block_migration=block_migration,
+            disk_over_commit=False)
+        waiters.wait_for_server_status(self.servers_client,
+                                       server['id'], 'ACTIVE')
+
+        self._wait_server_status_and_check_network_connectivity(
+            server, keypair, floating_ip)
+
+    @decorators.skip_because(bug='1788403')
     @decorators.idempotent_id('25b188d7-0183-4b1e-a11d-15840c8e2fd6')
     @testtools.skipUnless(CONF.compute_feature_enabled.cold_migration,
                           'Cold migration is not available.')
@@ -238,7 +270,7 @@ class TestNetworkAdvancedServerOps(manager.NetworkScenarioTest):
         keypair = self.create_keypair()
         server = self._setup_server(keypair)
         floating_ip = self._setup_network(server, keypair)
-        src_host = self._get_host_for_server(server['id'])
+        src_host = self.get_host_for_server(server['id'])
         self._wait_server_status_and_check_network_connectivity(
             server, keypair, floating_ip)
 
@@ -248,6 +280,6 @@ class TestNetworkAdvancedServerOps(manager.NetworkScenarioTest):
         self.servers_client.revert_resize_server(server['id'])
         self._wait_server_status_and_check_network_connectivity(
             server, keypair, floating_ip)
-        dst_host = self._get_host_for_server(server['id'])
+        dst_host = self.get_host_for_server(server['id'])
 
         self.assertEqual(src_host, dst_host)

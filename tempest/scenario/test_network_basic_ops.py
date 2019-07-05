@@ -175,7 +175,7 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
     def _get_server_key(self, server):
         return self.keypairs[server['key_name']]['private_key']
 
-    def check_public_network_connectivity(
+    def _check_public_network_connectivity(
             self, should_connect=True, msg=None,
             should_check_floating_ip_status=True, mtu=None):
         """Verifies connectivty to a VM via public network and floating IP
@@ -199,13 +199,18 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
         if should_connect:
             private_key = self._get_server_key(server)
             floatingip_status = 'ACTIVE'
+
         # Check FloatingIP Status before initiating a connection
         if should_check_floating_ip_status:
             self.check_floating_ip_status(floating_ip, floatingip_status)
-        # call the common method in the parent class
-        super(TestNetworkBasicOps, self).check_public_network_connectivity(
-            ip_address, ssh_login, private_key, should_connect, msg,
-            self.servers, mtu=mtu)
+
+        message = 'Public network connectivity check failed'
+        if msg:
+            message += '. Reason: %s' % msg
+
+        self.check_vm_connectivity(
+            ip_address, ssh_login, private_key, should_connect,
+            message, server, mtu=mtu)
 
     def _disassociate_floating_ips(self):
         floating_ip, _ = self.floating_ip_tuple
@@ -287,11 +292,14 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
                                               % CONF.network.build_timeout)
 
         _, new_nic = self.diff_list[0]
-        ssh_client.exec_command("sudo ip addr add %s/%s dev %s" % (
-                                new_port['fixed_ips'][0]['ip_address'],
-                                CONF.network.project_network_mask_bits,
-                                new_nic))
-        ssh_client.exec_command("sudo ip link set %s up" % new_nic)
+        ip_output = ssh_client.exec_command('ip a')
+        ip_address = new_port['fixed_ips'][0]['ip_address']
+        ip_mask = CONF.network.project_network_mask_bits
+        # check if the address is not already in use, if not, set it
+        if ' ' + ip_address + '/' + str(ip_mask) not in ip_output:
+            ssh_client.exec_command("sudo ip addr add %s/%s dev %s" % (
+                                    ip_address, ip_mask, new_nic))
+            ssh_client.exec_command("sudo ip link set %s up" % new_nic)
 
     def _get_server_nics(self, ssh_client):
         reg = re.compile(r'(?P<num>\d+): (?P<nic_name>\w+)[@]?.*:')
@@ -369,52 +377,50 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
     def test_network_basic_ops(self):
         """Basic network operation test
 
-        For a freshly-booted VM with an IP address ("port") on a given
-            network:
+        For a freshly-booted VM with an IP address ("port") on a given network:
 
         - the Tempest host can ping the IP address.  This implies, but
-         does not guarantee (see the ssh check that follows), that the
-         VM has been assigned the correct IP address and has
-         connectivity to the Tempest host.
+            does not guarantee (see the ssh check that follows), that the
+            VM has been assigned the correct IP address and has
+            connectivity to the Tempest host.
 
         - the Tempest host can perform key-based authentication to an
-         ssh server hosted at the IP address.  This check guarantees
-         that the IP address is associated with the target VM.
+            ssh server hosted at the IP address.  This check guarantees
+            that the IP address is associated with the target VM.
 
         - the Tempest host can ssh into the VM via the IP address and
-         successfully execute the following:
+            successfully execute the following:
 
-         - ping an external IP address, implying external connectivity.
+            - ping an external IP address, implying external connectivity.
 
-         - ping an external hostname, implying that dns is correctly
-           configured.
+            - ping an external hostname, implying that dns is correctly
+                configured.
 
-         - ping an internal IP address, implying connectivity to another
-           VM on the same network.
+            - ping an internal IP address, implying connectivity to another
+               VM on the same network.
 
         - detach the floating-ip from the VM and verify that it becomes
-        unreachable
+            unreachable
 
         - associate detached floating ip to a new VM and verify connectivity.
-        VMs are created with unique keypair so connectivity also asserts that
-        floating IP is associated with the new VM instead of the old one
+            VMs are created with unique keypair so connectivity also asserts
+            that floating IP is associated with the new VM instead of the old
+            one
 
         Verifies that floating IP status is updated correctly after each change
-
-
         """
         self._setup_network_and_servers()
-        self.check_public_network_connectivity(should_connect=True)
+        self._check_public_network_connectivity(should_connect=True)
         self._check_network_internal_connectivity(network=self.network)
         self._check_network_external_connectivity()
         self._disassociate_floating_ips()
-        self.check_public_network_connectivity(should_connect=False,
-                                               msg="after disassociate "
-                                                   "floating ip")
+        self._check_public_network_connectivity(should_connect=False,
+                                                msg="after disassociate "
+                                                    "floating ip")
         self._reassociate_floating_ips()
-        self.check_public_network_connectivity(should_connect=True,
-                                               msg="after re-associate "
-                                                   "floating ip")
+        self._check_public_network_connectivity(should_connect=True,
+                                                msg="after re-associate "
+                                                    "floating ip")
 
     @decorators.idempotent_id('b158ea55-472e-4086-8fa9-c64ac0c6c1d0')
     @testtools.skipUnless(utils.is_extension_enabled('net-mtu', 'network'),
@@ -425,56 +431,55 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
         """Validate that network MTU sized frames fit through."""
         self._setup_network_and_servers()
         # first check that connectivity works in general for the instance
-        self.check_public_network_connectivity(should_connect=True)
+        self._check_public_network_connectivity(should_connect=True)
         # now that we checked general connectivity, test that full size frames
         # can also pass between nodes
-        self.check_public_network_connectivity(
+        self._check_public_network_connectivity(
             should_connect=True, mtu=self.network['mtu'])
 
     @decorators.idempotent_id('1546850e-fbaa-42f5-8b5f-03d8a6a95f15')
     @testtools.skipIf(CONF.network.shared_physical_network,
                       'Connectivity can only be tested when in a '
                       'multitenant network environment')
-    @decorators.skip_because(bug="1610994")
     @decorators.attr(type='slow')
     @utils.services('compute', 'network')
     def test_connectivity_between_vms_on_different_networks(self):
         """Test connectivity between VMs on different networks
 
-        For a freshly-booted VM with an IP address ("port") on a given
-            network:
+        For a freshly-booted VM with an IP address ("port") on a given network:
 
         - the Tempest host can ping the IP address.
-
         - the Tempest host can ssh into the VM via the IP address and
-         successfully execute the following:
+            successfully execute the following:
 
-         - ping an external IP address, implying external connectivity.
-
-         - ping an external hostname, implying that dns is correctly
-           configured.
-
-         - ping an internal IP address, implying connectivity to another
-           VM on the same network.
+            - ping an external IP address, implying external connectivity.
+            - ping an external hostname, implying that dns is correctly
+               configured.
+            - ping an internal IP address, implying connectivity to another
+               VM on the same network.
 
         - Create another network on the same tenant with subnet, create
-        an VM on the new network.
+            an VM on the new network.
 
-         - Ping the new VM from previous VM failed since the new network
-         was not attached to router yet.
-
-         - Attach the new network to the router, Ping the new VM from
-         previous VM succeed.
+            - Ping the new VM from previous VM failed since the new network
+                was not attached to router yet.
+            - Attach the new network to the router, Ping the new VM from
+                previous VM succeed.
 
         """
         self._setup_network_and_servers()
-        self.check_public_network_connectivity(should_connect=True)
+        self._check_public_network_connectivity(should_connect=True)
         self._check_network_internal_connectivity(network=self.network)
         self._check_network_external_connectivity()
         self._create_new_network(create_gateway=True)
-        self._create_server(self.new_net)
-        self._check_network_internal_connectivity(network=self.new_net,
-                                                  should_connect=False)
+        new_server = self._create_server(self.new_net)
+        new_server_ips = [addr['addr'] for addr in
+                          new_server['addresses'][self.new_net['name']]]
+
+        # Assert that pinging the new VM fails since the new network is not
+        # connected to a router
+        self._check_server_connectivity(self.floating_ip_tuple.floating_ip,
+                                        new_server_ips, should_connect=False)
         router_id = self.router['id']
         self.routers_client.add_router_interface(
             router_id, subnet_id=self.new_subnet['id'])
@@ -482,8 +487,9 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
         self.addCleanup(test_utils.call_and_ignore_notfound_exc,
                         self.routers_client.remove_router_interface,
                         router_id, subnet_id=self.new_subnet['id'])
-        self._check_network_internal_connectivity(network=self.new_net,
-                                                  should_connect=True)
+
+        self._check_server_connectivity(self.floating_ip_tuple.floating_ip,
+                                        new_server_ips, should_connect=True)
 
     @decorators.idempotent_id('c5adff73-e961-41f1-b4a9-343614f18cfa')
     @testtools.skipUnless(CONF.compute_feature_enabled.interface_attach,
@@ -503,7 +509,7 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
 
         """
         self._setup_network_and_servers()
-        self.check_public_network_connectivity(should_connect=True)
+        self._check_public_network_connectivity(should_connect=True)
         self._create_new_network()
         self._hotplug_server()
         self._check_network_internal_connectivity(network=self.new_net)
@@ -525,19 +531,19 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
                 admin_state_up attribute of router to True
         """
         self._setup_network_and_servers()
-        self.check_public_network_connectivity(
+        self._check_public_network_connectivity(
             should_connect=True, msg="before updating "
             "admin_state_up of router to False")
         self._update_router_admin_state(self.router, False)
         # TODO(alokmaurya): Remove should_check_floating_ip_status=False check
         # once bug 1396310 is fixed
 
-        self.check_public_network_connectivity(
+        self._check_public_network_connectivity(
             should_connect=False, msg="after updating "
             "admin_state_up of router to False",
             should_check_floating_ip_status=False)
         self._update_router_admin_state(self.router, True)
-        self.check_public_network_connectivity(
+        self._check_public_network_connectivity(
             should_connect=True, msg="after updating "
             "admin_state_up of router to True")
 
@@ -551,38 +557,46 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
     def test_subnet_details(self):
         """Tests that subnet's extra configuration details are affecting VMs.
 
-         This test relies on non-shared, isolated tenant networks.
+        This test relies on non-shared, isolated tenant networks.
 
-         NOTE: Neutron subnets push data to servers via dhcp-agent, so any
-         update in subnet requires server to actively renew its DHCP lease.
+        NOTE: Neutron subnets push data to servers via dhcp-agent, so any
+        update in subnet requires server to actively renew its DHCP lease.
 
-         1. Configure subnet with dns nameserver
-         2. retrieve the VM's configured dns and verify it matches the one
-         configured for the subnet.
-         3. update subnet's dns
-         4. retrieve the VM's configured dns and verify it matches the new one
-         configured for the subnet.
+        1. Configure subnet with dns nameserver
+        2. retrieve the VM's configured dns and verify it matches the one
+           configured for the subnet.
+        3. update subnet's dns
+        4. retrieve the VM's configured dns and verify it matches the new one
+           configured for the subnet.
 
-         TODO(yfried): add host_routes
+        TODO(yfried): add host_routes
 
-         any resolution check would be testing either:
-            * l3 forwarding (tested in test_network_basic_ops)
-            * Name resolution of an external DNS nameserver - out of scope for
-            Tempest
+        any resolution check would be testing either:
+
+        * l3 forwarding (tested in test_network_basic_ops)
+        * Name resolution of an external DNS nameserver - out of scope for
+          Tempest
         """
         # this test check only updates (no actual resolution) so using
         # arbitrary ip addresses as nameservers, instead of parsing CONF
         initial_dns_server = '1.2.3.4'
         alt_dns_server = '9.8.7.6'
 
-        # renewal should be immediate.
-        # Timeouts are suggested by salvatore-orlando in
+        # Original timeouts are suggested by salvatore-orlando in
         # https://bugs.launchpad.net/neutron/+bug/1412325/comments/3
-        renew_delay = CONF.network.build_interval
+        #
+        # Compared to that renew_delay was increased, because
+        # busybox's udhcpc accepts SIGUSR1 as a renew request. Internally
+        # it goes into RENEW_REQUESTED state. If it receives a 2nd SIGUSR1
+        # signal while in that state then it calls the deconfig script
+        # ("/sbin/cirros-dhcpc deconfig" in sufficiently new cirros versions)
+        # which leads to the address being transiently deconfigured which
+        # for our case is unwanted.
+        renew_delay = 3 * CONF.network.build_interval
         renew_timeout = CONF.network.build_timeout
 
         self._setup_network_and_servers(dns_nameservers=[initial_dns_server])
-        self.check_public_network_connectivity(should_connect=True)
+        self._check_public_network_connectivity(should_connect=True)
 
         floating_ip, server = self.floating_ip_tuple
         ip_address = floating_ip['floating_ip_address']
@@ -657,20 +671,20 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
                                             private_key=private_key,
                                             server=server2)
 
-        self.check_public_network_connectivity(
+        self._check_public_network_connectivity(
             should_connect=True, msg="before updating "
             "admin_state_up of instance port to False")
         self.check_remote_connectivity(ssh_client, dest=server_pip,
                                        should_succeed=True)
         self.ports_client.update_port(port_id, admin_state_up=False)
-        self.check_public_network_connectivity(
+        self._check_public_network_connectivity(
             should_connect=False, msg="after updating "
             "admin_state_up of instance port to False",
             should_check_floating_ip_status=False)
         self.check_remote_connectivity(ssh_client, dest=server_pip,
                                        should_succeed=False)
         self.ports_client.update_port(port_id, admin_state_up=True)
-        self.check_public_network_connectivity(
+        self._check_public_network_connectivity(
             should_connect=True, msg="after updating "
             "admin_state_up of instance port to True")
         self.check_remote_connectivity(ssh_client, dest=server_pip,
@@ -738,7 +752,7 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
         2. Remove router from all l3-agents
         3. Verify connectivity is down
         4. Assign router to new l3-agent (or old one if no new agent is
-         available)
+           available)
         5. Verify connectivity
         """
 
@@ -767,7 +781,7 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
             msg = "Rescheduling test does not apply to distributed routers."
             raise self.skipException(msg)
 
-        self.check_public_network_connectivity(should_connect=True)
+        self._check_public_network_connectivity(should_connect=True)
 
         # remove resource from agents
         hosting_agents = set(a["id"] for a in
@@ -784,7 +798,7 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
                              'unscheduling router failed')
 
         # verify resource is un-functional
-        self.check_public_network_connectivity(
+        self._check_public_network_connectivity(
             should_connect=False,
             msg='after router unscheduling',
         )
@@ -801,7 +815,7 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
             "target agent")
 
         # verify resource is functional
-        self.check_public_network_connectivity(
+        self._check_public_network_connectivity(
             should_connect=True,
             msg='After router rescheduling')
 
@@ -819,7 +833,8 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
         prevents traffic to pass through the VM. Anti-spoof rules are not
         required in cases where the VM routes traffic through it.
 
-        The test steps are :
+        The test steps are:
+
         1. Create a new network.
         2. Connect (hotplug) the VM to a new network.
         3. Check the VM can ping a server on the new network ("peer")
@@ -828,14 +843,14 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
            spoofed interface (VM cannot ping the peer).
         6. Disable port-security of the spoofed port- set the flag to false.
         7. Retest 3rd step and check that the Security Group allows pings via
-        the spoofed interface.
+           the spoofed interface.
         """
 
         spoof_mac = "00:00:00:00:00:01"
 
         # Create server
         self._setup_network_and_servers()
-        self.check_public_network_connectivity(should_connect=True)
+        self._check_public_network_connectivity(should_connect=True)
         self._create_new_network()
         self._hotplug_server()
         fip, server = self.floating_ip_tuple

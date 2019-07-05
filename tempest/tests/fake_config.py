@@ -32,6 +32,7 @@ class ConfigFixture(conf_fixture.Config):
         super(ConfigFixture, self).setUp()
         self.conf.set_default('build_interval', 10, group='compute')
         self.conf.set_default('build_timeout', 10, group='compute')
+        self.conf.set_default('image_ref', 'fake_image_id', group='compute')
         self.conf.set_default('disable_ssl_certificate_validation', True,
                               group='identity')
         self.conf.set_default('uri', 'http://fake_uri.com/auth',
@@ -58,6 +59,7 @@ class FakePrivate(config.TempestConfigPrivate):
     def __init__(self, parse_conf=True, config_path=None):
         self._set_attrs()
         self.lock_path = cfg.CONF.oslo_concurrency.lock_path
+
 
 fake_service1_group = cfg.OptGroup(name='fake-service1', title='Fake service1')
 

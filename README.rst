@@ -61,7 +61,7 @@ as it is simpler, and quicker to work with.
 #. You first need to install Tempest. This is done with pip after you check out
    the Tempest repo::
 
-    $ git clone https://git.openstack.org/openstack/tempest
+    $ git clone https://opendev.org/openstack/tempest
     $ pip install tempest/
 
    This can be done within a venv, but the assumption for this guide is that
@@ -95,10 +95,12 @@ as it is simpler, and quicker to work with.
    command. Tempest is expecting a ``tempest.conf`` file in etc/ so if only a
    sample exists you must rename or copy it to tempest.conf before making
    any changes to it otherwise Tempest will not know how to load it. For
-   details on configuring Tempest refer to the :ref:`tempest-configuration`.
+   details on configuring Tempest refer to the
+   `Tempest Configuration <https://docs.openstack.org/tempest/latest/configuration.html#tempest-configuration>`_
 
 #. Once the configuration is done you're now ready to run Tempest. This can
-   be done using the :ref:`tempest_run` command. This can be done by either
+   be done using the `Tempest Run <https://docs.openstack.org/tempest/latest/run.html#tempest-run>`_
+   command. This can be done by either
    running::
 
     $ tempest run
@@ -109,15 +111,29 @@ as it is simpler, and quicker to work with.
 
     $ tempest run --workspace cloud-01
 
-   There is also the option to use testr directly, or any `testr`_ based test
-   runner, like `ostestr`_. For example, from the workspace dir run::
+   There is also the option to use `stestr`_ directly. For example, from
+   the workspace dir run::
 
-    $ ostestr --regex '(?!.*\[.*\bslow\b.*\])(^tempest\.(api|scenario))'
+    $ stestr run --black-regex '\[.*\bslow\b.*\]' '^tempest\.(api|scenario)'
 
-   will run the same set of tests as the default gate jobs.
+   will run the same set of tests as the default gate jobs. Or you can
+   use `unittest`_ compatible test runners such as `testr`_, `pytest`_ etc.
 
+   Tox also contains several existing job configurations. For example::
+
+    $ tox -e full
+
+   which will run the same set of tests as the OpenStack gate. (it's exactly how
+   the gate invokes Tempest) Or::
+
+    $ tox -e smoke
+
+   to run the tests tagged as smoke.
+
+.. _unittest: https://docs.python.org/3/library/unittest.html
 .. _testr: https://testrepository.readthedocs.org/en/latest/MANUAL.html
-.. _ostestr: https://docs.openstack.org/os-testr/latest/
+.. _stestr: https://stestr.readthedocs.org/en/latest/MANUAL.html
+.. _pytest: https://docs.pytest.org/en/latest/
 
 Library
 -------
@@ -129,7 +145,8 @@ Tempest library interface, other pieces of Tempest do not have the same
 stable interface and there are no guarantees on the Python API unless otherwise
 stated.
 
-For more details refer to the library documentation here: :ref:`library`
+For more details refer to the `library documentation
+<https://docs.openstack.org/tempest/latest/library.html#library>`_
 
 Release Versioning
 ------------------
@@ -159,14 +176,16 @@ interface. When Y is incremented we've added functionality to the library
 interface and when Z is incremented it's a bug fix release for the library.
 Also note that both Y and Z are reset to 0 at each increment of X.
 
-.. _semver: http://semver.org/
+.. _semver: https://semver.org/
 
 Configuration
 -------------
 
 Detailed configuration of Tempest is beyond the scope of this
-document see :ref:`tempest-configuration` for more details on configuring
-Tempest. The ``etc/tempest.conf.sample`` attempts to be a self-documenting
+document, see `Tempest Configuration Documentation
+<https://docs.openstack.org/tempest/latest/configuration.html#tempest-configuration>`_
+for more details on configuring Tempest.
+The ``etc/tempest.conf.sample`` attempts to be a self-documenting
 version of the configuration.
 
 You can generate a new sample tempest.conf file, run the following
@@ -190,39 +209,27 @@ should only be run on the unit test directory. The default value of ``test_path`
 is ``test_path=./tempest/test_discover`` which will only run test discover on the
 Tempest suite.
 
-Alternatively, there are the py27 and py35 tox jobs which will run the unit
+Alternatively, there are the py27 and py36 tox jobs which will run the unit
 tests with the corresponding version of python.
 
 One common activity is to just run a single test, you can do this with tox
-simply by specifying to just run py27 or py35 tests against a single test::
+simply by specifying to just run py27 or py36 tests against a single test::
 
-    $ tox -e py27 -- -n tempest.tests.test_microversions.TestMicroversionsTestsClass.test_config_version_none_23
+    $ tox -e py36 -- -n tempest.tests.test_microversions.TestMicroversionsTestsClass.test_config_version_none_23
 
 Or all tests in the test_microversions.py file::
 
-    $ tox -e py27 -- -n tempest.tests.test_microversions
+    $ tox -e py36 -- -n tempest.tests.test_microversions
 
 You may also use regular expressions to run any matching tests::
 
-    $ tox -e py27 -- test_microversions
+    $ tox -e py36 -- test_microversions
 
 Additionally, when running a single test, or test-file, the ``-n/--no-discover``
 argument is no longer required, however it may perform faster if included.
 
 For more information on these options and details about stestr, please see the
-`stestr documentation <http://stestr.readthedocs.io/en/latest/MANUAL.html>`_.
-
-Python 2.6
-----------
-
-Starting in the Kilo release the OpenStack services dropped all support for
-python 2.6. This change has been mirrored in Tempest, starting after the
-tempest-2 tag. This means that proposed changes to Tempest which only fix
-python 2.6 compatibility will be rejected, and moving forward more features not
-present in python 2.6 will be used. If you're running your OpenStack services
-on an earlier release with python 2.6 you can easily run Tempest against it
-from a remote system running python 2.7. (or deploy a cloud guest in your cloud
-that has python 2.7)
+`stestr documentation <https://stestr.readthedocs.io/en/latest/MANUAL.html>`_.
 
 Python 3.x
 ----------
@@ -274,14 +281,3 @@ tests by using ``testr`` ::
 To run one single test serially ::
 
     $ testr run tempest.api.compute.servers.test_servers_negative.ServersNegativeTestJSON.test_reboot_non_existent_server
-
-Tox also contains several existing job configurations. For example::
-
-    $ tox -e full
-
-which will run the same set of tests as the OpenStack gate. (it's exactly how
-the gate invokes Tempest) Or::
-
-    $ tox -e smoke
-
-to run the tests tagged as smoke.

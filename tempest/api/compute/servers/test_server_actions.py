@@ -59,8 +59,11 @@ class ServerActionsTestJSON(base.BaseV2ComputeTest):
                 self.server_id, validatable=True)
 
     def tearDown(self):
-        self.server_check_teardown()
         super(ServerActionsTestJSON, self).tearDown()
+        # NOTE(zhufl): Because server_check_teardown will raise Exception
+        # which will prevent other cleanup steps from being executed, so
+        # server_check_teardown should be called after super's tearDown.
+        self.server_check_teardown()
 
     @classmethod
     def setup_credentials(cls):
@@ -89,6 +92,7 @@ class ServerActionsTestJSON(base.BaseV2ComputeTest):
             validatable=True,
             validation_resources=validation_resources,
             wait_until='ACTIVE')
+        self.addCleanup(self.delete_server, newserver['id'])
         # The server's password should be set to the provided password
         new_password = 'Newpass1234'
         self.client.change_password(newserver['id'], adminPass=new_password)
@@ -197,7 +201,7 @@ class ServerActionsTestJSON(base.BaseV2ComputeTest):
         self.assertEqual(self.server_id, rebuilt_server['id'])
         rebuilt_image_id = rebuilt_server['image']['id']
         self.assertTrue(self.image_ref_alt.endswith(rebuilt_image_id))
-        self.assertEqual(self.flavor_ref, rebuilt_server['flavor']['id'])
+        self.assert_flavor_equal(self.flavor_ref, rebuilt_server['flavor'])
 
         # Verify the server properties after the rebuild completes
         waiters.wait_for_server_status(self.client,
@@ -251,7 +255,7 @@ class ServerActionsTestJSON(base.BaseV2ComputeTest):
         self.assertEqual(self.server_id, rebuilt_server['id'])
         rebuilt_image_id = rebuilt_server['image']['id']
         self.assertEqual(new_image, rebuilt_image_id)
-        self.assertEqual(self.flavor_ref, rebuilt_server['flavor']['id'])
+        self.assert_flavor_equal(self.flavor_ref, rebuilt_server['flavor'])
 
         # Verify the server properties after the rebuild completes
         waiters.wait_for_server_status(self.client,
@@ -262,6 +266,11 @@ class ServerActionsTestJSON(base.BaseV2ComputeTest):
 
         self.client.start_server(self.server_id)
 
+    # NOTE(mriedem): Marked as slow because while rebuild and volume-backed is
+    # common, we don't actually change the image (you can't with volume-backed
+    # rebuild) so this isn't testing much outside normal rebuild
+    # (and it's slow).
+    @decorators.attr(type='slow')
     @decorators.idempotent_id('b68bd8d6-855d-4212-b59b-2e704044dace')
     @utils.services('volume')
     def test_rebuild_server_with_volume_attached(self):
@@ -280,6 +289,17 @@ class ServerActionsTestJSON(base.BaseV2ComputeTest):
         self.assertEqual('in-use', vol_after_rebuild['status'])
         self.assertEqual(self.server_id,
                          vol_after_rebuild['attachments'][0]['server_id'])
+        if CONF.validation.run_validation:
+            validation_resources = self.get_class_validation_resources(
+                self.os_primary)
+            linux_client = remote_client.RemoteClient(
+                self.get_server_ip(server, validation_resources),
+                self.ssh_user,
+                password=None,
+                pkey=validation_resources['keypair']['private_key'],
+                server=server,
+                servers_client=self.client)
+            linux_client.validate_authentication()
 
     def _test_resize_server_confirm(self, server_id, stop=False):
         # The server's RAM and disk space should be modified to that of
@@ -303,7 +323,7 @@ class ServerActionsTestJSON(base.BaseV2ComputeTest):
                                        expected_status)
 
         server = self.client.show_server(server_id)['server']
-        self.assertEqual(self.flavor_ref_alt, server['flavor']['id'])
+        self.assert_flavor_equal(self.flavor_ref_alt, server['flavor'])
 
         if stop:
             # NOTE(mriedem): tearDown requires the server to be started.
@@ -367,7 +387,40 @@ class ServerActionsTestJSON(base.BaseV2ComputeTest):
         waiters.wait_for_server_status(self.client, self.server_id, 'ACTIVE')
 
         server = self.client.show_server(self.server_id)['server']
-        self.assertEqual(self.flavor_ref, server['flavor']['id'])
+        self.assert_flavor_equal(self.flavor_ref, server['flavor'])
+
+    @decorators.idempotent_id('fbbf075f-a812-4022-bc5c-ccb8047eef12')
+    @decorators.related_bug('1737599')
+    @testtools.skipUnless(CONF.compute_feature_enabled.resize,
+                          'Resize not available.')
+    @utils.services('volume')
+    def test_resize_server_revert_with_volume_attached(self):
+        # Tests attaching a volume to a server instance and then resizing
+        # the instance. Once the instance is resized, revert the resize which
+        # should move the instance and volume attachment back to the original
+        # compute host.
+
+        # Create a blank volume and attach it to the server created in setUp.
+        volume = self.create_volume()
+        server = self.client.show_server(self.server_id)['server']
+        self.attach_volume(server, volume)
+        # Now resize the server with the blank volume attached.
+        self.client.resize_server(self.server_id, self.flavor_ref_alt)
+        # Explicitly delete the server to get a new one for later
+        # tests. Avoids resize down race issues.
+        self.addCleanup(self.delete_server, self.server_id)
+        waiters.wait_for_server_status(
+            self.client, self.server_id, 'VERIFY_RESIZE')
+        # Now revert the resize which should move the instance and it's volume
+        # attachment back to the original source compute host.
+        self.client.revert_resize_server(self.server_id)
+        waiters.wait_for_server_status(self.client, self.server_id, 'ACTIVE')
+        # Make sure everything still looks OK.
+        server = self.client.show_server(self.server_id)['server']
+        self.assert_flavor_equal(self.flavor_ref, server['flavor'])
+        attached_volumes = server['os-extended-volumes:volumes_attached']
+        self.assertEqual(1, len(attached_volumes))
+        self.assertEqual(volume['id'], attached_volumes[0]['id'])
 
     @decorators.idempotent_id('b963d4f1-94b3-4c40-9e97-7b583f46e470')
     @testtools.skipUnless(CONF.compute_feature_enabled.snapshot,
@@ -393,7 +446,7 @@ class ServerActionsTestJSON(base.BaseV2ComputeTest):
         resp = self.client.create_backup(self.server_id,
                                          backup_type='daily',
                                          rotation=2,
-                                         name=backup1).response
+                                         name=backup1)
         oldest_backup_exist = True
 
         # the oldest one should be deleted automatically in this test
@@ -409,10 +462,10 @@ class ServerActionsTestJSON(base.BaseV2ComputeTest):
                                 "deleted during rotation.", oldest_backup)
 
         if api_version_utils.compare_version_header_to_response(
-                "OpenStack-API-Version", "compute 2.45", resp, "lt"):
+                "OpenStack-API-Version", "compute 2.45", resp.response, "lt"):
             image1_id = resp['image_id']
         else:
-            image1_id = data_utils.parse_image_id(resp['location'])
+            image1_id = data_utils.parse_image_id(resp.response['location'])
         self.addCleanup(_clean_oldest_backup, image1_id)
         waiters.wait_for_image_status(glance_client,
                                       image1_id, 'active')
@@ -422,12 +475,12 @@ class ServerActionsTestJSON(base.BaseV2ComputeTest):
         resp = self.client.create_backup(self.server_id,
                                          backup_type='daily',
                                          rotation=2,
-                                         name=backup2).response
+                                         name=backup2)
         if api_version_utils.compare_version_header_to_response(
-                "OpenStack-API-Version", "compute 2.45", resp, "lt"):
+                "OpenStack-API-Version", "compute 2.45", resp.response, "lt"):
             image2_id = resp['image_id']
         else:
-            image2_id = data_utils.parse_image_id(resp['location'])
+            image2_id = data_utils.parse_image_id(resp.response['location'])
         self.addCleanup(glance_client.delete_image, image2_id)
         waiters.wait_for_image_status(glance_client,
                                       image2_id, 'active')
@@ -465,12 +518,12 @@ class ServerActionsTestJSON(base.BaseV2ComputeTest):
         resp = self.client.create_backup(self.server_id,
                                          backup_type='daily',
                                          rotation=2,
-                                         name=backup3).response
+                                         name=backup3)
         if api_version_utils.compare_version_header_to_response(
-                "OpenStack-API-Version", "compute 2.45", resp, "lt"):
+                "OpenStack-API-Version", "compute 2.45", resp.response, "lt"):
             image3_id = resp['image_id']
         else:
-            image3_id = data_utils.parse_image_id(resp['location'])
+            image3_id = data_utils.parse_image_id(resp.response['location'])
         self.addCleanup(glance_client.delete_image, image3_id)
         # the first back up should be deleted
         waiters.wait_for_server_status(self.client, self.server_id, 'ACTIVE')
@@ -491,10 +544,10 @@ class ServerActionsTestJSON(base.BaseV2ComputeTest):
 
     def _get_output(self):
         output = self.client.get_console_output(
-            self.server_id, length=10)['output']
+            self.server_id, length=3)['output']
         self.assertTrue(output, "Console output was empty.")
         lines = len(output.split('\n'))
-        self.assertEqual(lines, 10)
+        self.assertEqual(lines, 3)
 
     @decorators.idempotent_id('4b8867e6-fffa-4d54-b1d1-6fdda57be2f3')
     @testtools.skipUnless(CONF.compute_feature_enabled.console_output,
@@ -525,8 +578,8 @@ class ServerActionsTestJSON(base.BaseV2ComputeTest):
 
             # NOTE: This test tries to get full length console log, and the
             # length should be bigger than the one of test_get_console_output.
-            self.assertGreater(lines, 10, "Cannot get enough console log "
-                                          "length. (lines: %s)" % lines)
+            self.assertGreater(lines, 3, "Cannot get enough console log "
+                                         "length. (lines: %s)" % lines)
 
         self.wait_for(_check_full_length_console_log)
 
@@ -603,6 +656,20 @@ class ServerActionsTestJSON(base.BaseV2ComputeTest):
         waiters.wait_for_server_status(self.client, self.server_id, 'ACTIVE')
         glance_client.wait_for_resource_deletion(images[0]['id'])
 
+    @decorators.idempotent_id('8cf9f450-a871-42cf-9bef-77eba189c0b0')
+    @decorators.related_bug('1745529')
+    @testtools.skipUnless(CONF.compute_feature_enabled.shelve,
+                          'Shelve is not available.')
+    @testtools.skipUnless(CONF.compute_feature_enabled.pause,
+                          'Pause is not available.')
+    def test_shelve_paused_server(self):
+        server = self.create_test_server(wait_until='ACTIVE')
+        self.client.pause_server(server['id'])
+        waiters.wait_for_server_status(self.client, server['id'], 'PAUSED')
+        # Check if Shelve operation is successful on paused server.
+        compute.shelve_server(self.client, server['id'],
+                              force_shelve_offload=True)
+
     @decorators.idempotent_id('af8eafd4-38a7-4a4b-bdbc-75145a580560')
     def test_stop_start_server(self):
         self.client.stop_server(self.server_id)
@@ -640,8 +707,13 @@ class ServerActionsTestJSON(base.BaseV2ComputeTest):
         # Get the VNC console of type 'novnc' and 'xvpvnc'
         console_types = ['novnc', 'xvpvnc']
         for console_type in console_types:
-            body = self.client.get_vnc_console(self.server_id,
-                                               type=console_type)['console']
+            if self.is_requested_microversion_compatible('2.5'):
+                body = self.client.get_vnc_console(
+                    self.server_id, type=console_type)['console']
+            else:
+                body = self.client.get_remote_console(
+                    self.server_id, console_type=console_type,
+                    protocol='vnc')['remote_console']
             self.assertEqual(console_type, body['type'])
             self.assertNotEqual('', body['url'])
             self._validate_url(body['url'])

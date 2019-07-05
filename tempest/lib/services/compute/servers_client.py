@@ -30,7 +30,12 @@ from tempest.lib.api_schema.response.compute.v2_3 import servers as schemav23
 from tempest.lib.api_schema.response.compute.v2_47 import servers as schemav247
 from tempest.lib.api_schema.response.compute.v2_48 import servers as schemav248
 from tempest.lib.api_schema.response.compute.v2_54 import servers as schemav254
+from tempest.lib.api_schema.response.compute.v2_57 import servers as schemav257
 from tempest.lib.api_schema.response.compute.v2_6 import servers as schemav26
+from tempest.lib.api_schema.response.compute.v2_63 import servers as schemav263
+from tempest.lib.api_schema.response.compute.v2_70 import servers as schemav270
+from tempest.lib.api_schema.response.compute.v2_71 import servers as schemav271
+from tempest.lib.api_schema.response.compute.v2_8 import servers as schemav28
 from tempest.lib.api_schema.response.compute.v2_9 import servers as schemav29
 from tempest.lib.common import rest_client
 from tempest.lib.services.compute import base_compute_client
@@ -42,14 +47,19 @@ class ServersClient(base_compute_client.BaseComputeClient):
     schema_versions_info = [
         {'min': None, 'max': '2.2', 'schema': schema},
         {'min': '2.3', 'max': '2.5', 'schema': schemav23},
-        {'min': '2.6', 'max': '2.8', 'schema': schemav26},
+        {'min': '2.6', 'max': '2.7', 'schema': schemav26},
+        {'min': '2.8', 'max': '2.8', 'schema': schemav28},
         {'min': '2.9', 'max': '2.15', 'schema': schemav29},
         {'min': '2.16', 'max': '2.18', 'schema': schemav216},
         {'min': '2.19', 'max': '2.25', 'schema': schemav219},
         {'min': '2.26', 'max': '2.46', 'schema': schemav226},
         {'min': '2.47', 'max': '2.47', 'schema': schemav247},
         {'min': '2.48', 'max': '2.53', 'schema': schemav248},
-        {'min': '2.54', 'max': None, 'schema': schemav254}]
+        {'min': '2.54', 'max': '2.56', 'schema': schemav254},
+        {'min': '2.57', 'max': '2.62', 'schema': schemav257},
+        {'min': '2.63', 'max': '2.69', 'schema': schemav263},
+        {'min': '2.70', 'max': '2.70', 'schema': schemav270},
+        {'min': '2.71', 'max': None, 'schema': schemav271}]
 
     def __init__(self, auth_provider, service, region,
                  enable_instance_password=True, **kwargs):
@@ -437,6 +447,7 @@ class ServersClient(base_compute_client.BaseComputeClient):
         resp, body = self.post('servers/%s/os-volume_attachments' % server_id,
                                post_body)
         body = json.loads(body)
+        schema = self.get_schema(self.schema_versions_info)
         self.validate_response(schema.attach_volume, resp, body)
         return rest_client.ResponseBody(resp, body)
 
@@ -471,6 +482,7 @@ class ServersClient(base_compute_client.BaseComputeClient):
         resp, body = self.get('servers/%s/os-volume_attachments/%s' % (
             server_id, volume_id))
         body = json.loads(body)
+        schema = self.get_schema(self.schema_versions_info)
         self.validate_response(schema.show_volume_attachment, resp, body)
         return rest_client.ResponseBody(resp, body)
 
@@ -484,6 +496,7 @@ class ServersClient(base_compute_client.BaseComputeClient):
         resp, body = self.get('servers/%s/os-volume_attachments' % (
             server_id))
         body = json.loads(body)
+        schema = self.get_schema(self.schema_versions_info)
         self.validate_response(schema.list_volume_attachments, resp, body)
         return rest_client.ResponseBody(resp, body)
 
@@ -647,7 +660,7 @@ class ServersClient(base_compute_client.BaseComputeClient):
     def list_virtual_interfaces(self, server_id):
         """List the virtual interfaces used in an instance."""
         resp, body = self.get('/'.join(['servers', server_id,
-                              'os-virtual-interfaces']))
+                                        'os-virtual-interfaces']))
         body = json.loads(body)
         self.validate_response(schema.list_virtual_interfaces, resp, body)
         return rest_client.ResponseBody(resp, body)

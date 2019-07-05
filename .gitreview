@@ -1,5 +1,9 @@
 [gerrit]
+<<<<<<< HEAD
 host=review.gerrithub.io
+=======
+host=review.opendev.org
+>>>>>>> 2df6114e44e1a0af48451a901d3d88c6c7975dd8
 port=29418
 project=cisco-openstack/tempest.git
 defaultbranch=proposed

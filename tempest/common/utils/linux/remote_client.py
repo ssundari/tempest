@@ -98,6 +98,7 @@ class RemoteClient(remote_client.RemoteClient):
     def get_nic_name_by_ip(self, address):
         cmd = "ip -o addr | awk '/%s/ {print $2}'" % address
         nic = self.exec_command(cmd)
+        LOG.debug('(get_nic_name_by_ip) Command result: %s', nic)
         return nic.strip().strip(":").split('@')[0].lower()
 
     def get_dns_servers(self):
@@ -156,11 +157,52 @@ class RemoteClient(remote_client.RemoteClient):
             LOG.info("Contents of /dev: %s", self.exec_command(cmd_why))
             raise
 
-    def get_nic_name_by_mac_addr(self, mac_address):
-        cmd = "ip -o link | awk '/%s/ {print $2}'" % mac_address
-        return self._get_nic_name(cmd)
+    def nc_listen_host(self, port=80, protocol='tcp'):
+        """Creates persistent nc server listening on the given TCP / UDP port
 
-    def _get_nic_name(self, cmd):
-        nic = self.exec_command(cmd)
-        return nic.strip().strip(":").lower()
+        :port: the port to start listening on.
+        :protocol: the protocol used by the server. TCP by default.
+        """
+        udp = '-u' if protocol.lower() == 'udp' else ''
+        cmd = "sudo nc %(udp)s -p %(port)s -lk -e echo foolish &" % {
+            'udp': udp, 'port': port}
+        return self.exec_command(cmd)
 
+    def nc_host(self, host, port=80, protocol='tcp', expected_response=None):
+        """Check connectivity to TCP / UDP port at host via nc
+
+        :host: an IP against which the connectivity will be tested.
+        :port: the port to check connectivity against.
+        :protocol: the protocol used by nc to send packets. TCP by default.
+        :expected_response: string representing the expected response
+            from server.
+        :raises SSHExecCommandFailed: if an expected response is given and it
+            does not match the actual server response.
+        """
+        udp = '-u' if protocol.lower() == 'udp' else ''
+        cmd = 'echo "bar" | nc -w 1 %(udp)s %(host)s %(port)s' % {
+            'udp': udp, 'host': host, 'port': port}
+        response = self.exec_command(cmd)
+
+        # sending an UDP packet will always succeed. we need to check
+        # the response.
+        if (expected_response is not None and
+                expected_response != response.strip()):
+            raise tempest.lib.exceptions.SSHExecCommandFailed(
+                command=cmd, exit_status=0, stdout=response, stderr='')
+        return response
+
+    def icmp_check(self, host, nic=None):
+        """Wrapper for icmp connectivity checks"""
+        return self.ping_host(host, nic=nic)
+
+    def udp_check(self, host, **kwargs):
+        """Wrapper for udp connectivity checks."""
+        kwargs.pop('nic', None)
+        return self.nc_host(host, protocol='udp', expected_response='foolish',
+                            **kwargs)
+
+    def tcp_check(self, host, **kwargs):
+        """Wrapper for tcp connectivity checks."""
+        kwargs.pop('nic', None)
+        return self.nc_host(host, **kwargs)

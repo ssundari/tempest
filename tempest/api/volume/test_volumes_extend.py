@@ -32,8 +32,8 @@ class VolumesExtendTest(base.BaseVolumeTest):
     @decorators.idempotent_id('9a36df71-a257-43a5-9555-dc7c88e66e0e')
     def test_volume_extend(self):
         # Extend Volume Test.
-        volume = self.create_volume(image_ref=self.image_ref)
-        extend_size = volume['size'] + 1
+        volume = self.create_volume(imageRef=self.image_ref)
+        extend_size = volume['size'] * 2
         self.volumes_client.extend_volume(volume['id'],
                                           new_size=extend_size)
         waiters.wait_for_volume_resource_status(self.volumes_client,
@@ -48,7 +48,7 @@ class VolumesExtendTest(base.BaseVolumeTest):
         volume = self.create_volume()
         self.create_snapshot(volume['id'])
 
-        extend_size = volume['size'] + 1
+        extend_size = volume['size'] * 2
         self.volumes_client.extend_volume(volume['id'], new_size=extend_size)
 
         waiters.wait_for_volume_resource_status(self.volumes_client,

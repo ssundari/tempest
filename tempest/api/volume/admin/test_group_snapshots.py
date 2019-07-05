@@ -157,6 +157,57 @@ class GroupSnapshotsTest(BaseGroupSnapshotsTest):
         waiters.wait_for_volume_resource_status(
             self.groups_client, grp2['id'], 'available')
 
+    @decorators.idempotent_id('7d7fc000-0b4c-4376-a372-544116d2e127')
+    @decorators.related_bug('1739031')
+    def test_delete_group_snapshots_following_updated_volumes(self):
+        volume_type = self.create_volume_type()
+
+        group_type = self.create_group_type()
+
+        # Create a volume group
+        grp = self.create_group(group_type=group_type['id'],
+                                volume_types=[volume_type['id']])
+
+        # Note: When dealing with consistency groups all volumes must
+        # reside on the same backend. Adding volumes to the same consistency
+        # group from multiple backends isn't supported. In order to ensure all
+        # volumes share the same backend, all volumes must share same
+        # volume-type and group id.
+        volume_list = []
+        for _ in range(2):
+            volume = self.create_volume(volume_type=volume_type['id'],
+                                        group_id=grp['id'])
+            volume_list.append(volume['id'])
+
+        for vol in volume_list:
+            self.groups_client.update_group(grp['id'],
+                                            remove_volumes=vol)
+            waiters.wait_for_volume_resource_status(
+                self.groups_client, grp['id'], 'available')
+
+            self.groups_client.update_group(grp['id'],
+                                            add_volumes=vol)
+            waiters.wait_for_volume_resource_status(
+                self.groups_client, grp['id'], 'available')
+
+        # Verify the created volumes are associated with consistency group
+        vols = self.volumes_client.list_volumes(detail=True)['volumes']
+        grp_vols = [v for v in vols if v['group_id'] == grp['id']]
+        self.assertEqual(2, len(grp_vols))
+
+        # Create a snapshot group
+        group_snapshot = self._create_group_snapshot(group_id=grp['id'])
+        snapshots = self.snapshots_client.list_snapshots(
+            detail=True)['snapshots']
+
+        for snap in snapshots:
+            if snap['volume_id'] in volume_list:
+                waiters.wait_for_volume_resource_status(
+                    self.snapshots_client, snap['id'], 'available')
+
+        # Delete a snapshot group
+        self._delete_group_snapshot(group_snapshot)
+
 
 class GroupSnapshotsV319Test(BaseGroupSnapshotsTest):
     _api_version = 3
@@ -164,6 +215,7 @@ class GroupSnapshotsV319Test(BaseGroupSnapshotsTest):
     max_microversion = 'latest'
 
     @decorators.idempotent_id('3b42c9b9-c984-4444-816e-ca2e1ed30b40')
+    @decorators.skip_because(bug='1770179')
     def test_reset_group_snapshot_status(self):
         # Create volume type
         volume_type = self.create_volume_type()

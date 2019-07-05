@@ -13,24 +13,44 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from oslo_log import log as logging
+
 from tempest.api.identity import base
+from tempest import config
 from tempest.lib.common.utils import data_utils
 from tempest.lib import decorators
 
+LOG = logging.getLogger(__name__)
+CONF = config.CONF
 
-class ListProjectsTestJSON(base.BaseIdentityV3AdminTest):
+
+class BaseListProjectsTestJSON(base.BaseIdentityV3AdminTest):
+
+    def _list_projects_with_params(self, included, excluded, params, key):
+        # Validate that projects in ``included`` belongs to the projects
+        # returned that match ``params`` but not projects in ``excluded``
+        all_projects = self.projects_client.list_projects()['projects']
+        LOG.debug("Complete list of projects available in keystone: %s",
+                  all_projects)
+        body = self.projects_client.list_projects(params)['projects']
+        for p in included:
+            self.assertIn(p[key], map(lambda x: x[key], body))
+        for p in excluded:
+            self.assertNotIn(p[key], map(lambda x: x[key], body))
+
+
+class ListProjectsTestJSON(BaseListProjectsTestJSON):
 
     @classmethod
     def resource_setup(cls):
         super(ListProjectsTestJSON, cls).resource_setup()
         cls.project_ids = list()
-        # Create a domain
-        cls.domain = cls.create_domain()
+        cls.domain_id = cls.os_admin.credentials.domain_id
         # Create project with domain
         cls.p1_name = data_utils.rand_name('project')
         cls.p1 = cls.projects_client.create_project(
             cls.p1_name, enabled=False,
-            domain_id=cls.domain['id'])['project']
+            domain_id=cls.domain_id)['project']
         cls.addClassResourceCleanup(cls.projects_client.delete_project,
                                     cls.p1['id'])
         cls.project_ids.append(cls.p1['id'])
@@ -48,30 +68,11 @@ class ListProjectsTestJSON(base.BaseIdentityV3AdminTest):
                                     cls.p3['id'])
         cls.project_ids.append(cls.p3['id'])
 
-    @decorators.idempotent_id('1d830662-22ad-427c-8c3e-4ec854b0af44')
-    def test_list_projects(self):
-        # List projects
-        list_projects = self.projects_client.list_projects()['projects']
-
-        for p in self.project_ids:
-            show_project = self.projects_client.show_project(p)['project']
-            self.assertIn(show_project, list_projects)
-
-    @decorators.idempotent_id('fab13f3c-f6a6-4b9f-829b-d32fd44fdf10')
-    def test_list_projects_with_domains(self):
-        # List projects with domain
-        self._list_projects_with_params(
-            {'domain_id': self.domain['id']}, 'domain_id')
-
     @decorators.idempotent_id('0fe7a334-675a-4509-b00e-1c4b95d5dae8')
     def test_list_projects_with_enabled(self):
         # List the projects with enabled
-        self._list_projects_with_params({'enabled': False}, 'enabled')
-
-    @decorators.idempotent_id('fa178524-4e6d-4925-907c-7ab9f42c7e26')
-    def test_list_projects_with_name(self):
-        # List projects with name
-        self._list_projects_with_params({'name': self.p1_name}, 'name')
+        self._list_projects_with_params(
+            [self.p1], [self.p2, self.p3], {'enabled': False}, 'enabled')
 
     @decorators.idempotent_id('6edc66f5-2941-4a17-9526-4073311c1fac')
     def test_list_projects_with_parent(self):
@@ -83,7 +84,50 @@ class ListProjectsTestJSON(base.BaseIdentityV3AdminTest):
         for project in fetched_projects:
             self.assertEqual(self.p3['parent_id'], project['parent_id'])
 
-    def _list_projects_with_params(self, params, key):
-        body = self.projects_client.list_projects(params)['projects']
-        self.assertIn(self.p1[key], map(lambda x: x[key], body))
-        self.assertNotIn(self.p2[key], map(lambda x: x[key], body))
+
+class ListProjectsStaticTestJSON(BaseListProjectsTestJSON):
+    # NOTE: force_tenant_isolation is true in the base class by default but
+    # overridden to false here to allow test execution for clouds using the
+    # pre-provisioned credentials provider.
+    force_tenant_isolation = False
+
+    @classmethod
+    def resource_setup(cls):
+        super(ListProjectsStaticTestJSON, cls).resource_setup()
+        cls.domain_id = CONF.identity.default_domain_id
+        cls.project_ids = list()
+        cls.p1_name = cls.os_primary.credentials.project_name
+        cls.p1 = cls.projects_client.show_project(
+            cls.os_primary.credentials.project_id)['project']
+        cls.project_ids.append(cls.p1['id'])
+        p2_name = data_utils.rand_name('project')
+        cls.p2 = cls.projects_client.create_project(
+            p2_name, domain_id=cls.domain_id)['project']
+        cls.addClassResourceCleanup(cls.projects_client.delete_project,
+                                    cls.p2['id'])
+        cls.project_ids.append(cls.p2['id'])
+
+    @decorators.idempotent_id('1d830662-22ad-427c-8c3e-4ec854b0af44')
+    def test_list_projects(self):
+        # List projects
+        list_projects = self.projects_client.list_projects()['projects']
+
+        for p in self.project_ids:
+            show_project = self.projects_client.show_project(p)['project']
+            self.assertIn(show_project, list_projects)
+
+    @decorators.idempotent_id('fa178524-4e6d-4925-907c-7ab9f42c7e26')
+    def test_list_projects_with_name(self):
+        # List projects with name
+        self._list_projects_with_params(
+            [self.p1], [self.p2], {'name': self.p1_name}, 'name')
+
+    @decorators.idempotent_id('fab13f3c-f6a6-4b9f-829b-d32fd44fdf10')
+    def test_list_projects_with_domains(self):
+        # List projects with domain
+        key = 'domain_id'
+        params = {key: self.domain_id}
+        # Verify both projects are in the self.domain_id which is the default
+        # domain
+        self._list_projects_with_params(
+            [self.p1, self.p2], [], params, key)

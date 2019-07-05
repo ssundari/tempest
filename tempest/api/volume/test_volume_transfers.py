@@ -15,6 +15,7 @@
 
 from tempest.api.volume import base
 from tempest.common import waiters
+from tempest.lib.common.utils import test_utils
 from tempest.lib import decorators
 
 
@@ -26,10 +27,10 @@ class VolumesTransfersTest(base.BaseVolumeTest):
     def setup_clients(cls):
         super(VolumesTransfersTest, cls).setup_clients()
 
-        cls.client = cls.os_primary.volume_transfers_v2_client
-        cls.alt_client = cls.os_alt.volume_transfers_v2_client
-        cls.alt_volumes_client = cls.os_alt.volumes_v2_client
-        cls.adm_volumes_client = cls.os_admin.volumes_v2_client
+        cls.client = cls.os_primary.volume_transfers_client_latest
+        cls.alt_client = cls.os_alt.volume_transfers_client_latest
+        cls.alt_volumes_client = cls.os_alt.volumes_client_latest
+        cls.adm_volumes_client = cls.os_admin.volumes_client_latest
 
     @decorators.idempotent_id('4d75b645-a478-48b1-97c8-503f64242f1a')
     def test_create_get_list_accept_volume_transfer(self):
@@ -43,6 +44,9 @@ class VolumesTransfersTest(base.BaseVolumeTest):
         transfer = self.client.create_volume_transfer(
             volume_id=volume['id'])['transfer']
         transfer_id = transfer['id']
+        self.addCleanup(test_utils.call_and_ignore_notfound_exc,
+                        self.client.delete_volume_transfer,
+                        transfer_id)
         auth_key = transfer['auth_key']
         waiters.wait_for_volume_resource_status(
             self.volumes_client, volume['id'], 'awaiting-transfer')
@@ -81,6 +85,9 @@ class VolumesTransfersTest(base.BaseVolumeTest):
         # Create a volume transfer
         transfer_id = self.client.create_volume_transfer(
             volume_id=volume['id'])['transfer']['id']
+        self.addCleanup(test_utils.call_and_ignore_notfound_exc,
+                        self.client.delete_volume_transfer,
+                        transfer_id)
         waiters.wait_for_volume_resource_status(
             self.volumes_client, volume['id'], 'awaiting-transfer')
 

@@ -12,6 +12,7 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+import testtools
 
 from tempest.api.identity import base
 from tempest import config
@@ -22,6 +23,10 @@ CONF = config.CONF
 
 
 class ProjectsTestJSON(base.BaseIdentityV3AdminTest):
+    # NOTE: force_tenant_isolation is true in the base class by default but
+    # overridden to false here to allow test execution for clouds using the
+    # pre-provisioned credentials provider.
+    force_tenant_isolation = False
 
     @decorators.idempotent_id('0ecf465c-0dc4-4532-ab53-91ffeb74d12d')
     def test_project_create_with_description(self):
@@ -34,7 +39,7 @@ class ProjectsTestJSON(base.BaseIdentityV3AdminTest):
                          'been sent in response for create')
         body = self.projects_client.show_project(project_id)['project']
         desc2 = body['description']
-        self.assertEqual(desc2, project_desc, 'Description does not appear'
+        self.assertEqual(desc2, project_desc, 'Description does not appear '
                          'to be set')
 
     @decorators.idempotent_id('5f50fe07-8166-430b-a882-3b2ee0abe26f')
@@ -179,6 +184,10 @@ class ProjectsTestJSON(base.BaseIdentityV3AdminTest):
         self.assertEqual(resp2_en, resp3_en)
 
     @decorators.idempotent_id('59398d4a-5dc5-4f86-9a4c-c26cc804d6c6')
+    @testtools.skipIf(CONF.identity_feature_enabled.immutable_user_source,
+                      'Skipped because environment has an '
+                      'immutable user source and solely '
+                      'provides read-only access to users.')
     def test_associate_user_to_project(self):
         # Associate a user to a project
         # Create a Project

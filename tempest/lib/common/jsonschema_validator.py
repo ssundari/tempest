@@ -12,9 +12,10 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-
 import jsonschema
+from oslo_serialization import base64
 from oslo_utils import timeutils
+import six
 
 # JSON Schema validator and format checker used for JSON Schema validation
 JSONSCHEMA_VALIDATOR = jsonschema.Draft4Validator
@@ -37,3 +38,17 @@ def _validate_datetime_format(instance):
         return False
     else:
         return True
+
+
+@jsonschema.FormatChecker.cls_checks('base64')
+def _validate_base64_format(instance):
+    try:
+        if isinstance(instance, six.text_type):
+            instance = instance.encode('utf-8')
+        base64.decode_as_bytes(instance)
+    except TypeError:
+        # The name must be string type. If instance isn't string type, the
+        # TypeError will be raised at here.
+        return False
+
+    return True

@@ -345,58 +345,6 @@ list_addresses = {
     }
 }
 
-common_server_group = {
-    'type': 'object',
-    'properties': {
-        'id': {'type': 'string'},
-        'name': {'type': 'string'},
-        'policies': {
-            'type': 'array',
-            'items': {'type': 'string'}
-        },
-        # 'members' attribute contains the array of instance's UUID of
-        # instances present in server group
-        'members': {
-            'type': 'array',
-            'items': {'type': 'string'}
-        },
-        'metadata': {'type': 'object'}
-    },
-    'additionalProperties': False,
-    'required': ['id', 'name', 'policies', 'members', 'metadata']
-}
-
-create_show_server_group = {
-    'status_code': [200],
-    'response_body': {
-        'type': 'object',
-        'properties': {
-            'server_group': common_server_group
-        },
-        'additionalProperties': False,
-        'required': ['server_group']
-    }
-}
-
-delete_server_group = {
-    'status_code': [204]
-}
-
-list_server_groups = {
-    'status_code': [200],
-    'response_body': {
-        'type': 'object',
-        'properties': {
-            'server_groups': {
-                'type': 'array',
-                'items': common_server_group
-            }
-        },
-        'additionalProperties': False,
-        'required': ['server_groups']
-    }
-}
-
 instance_actions = {
     'type': 'object',
     'properties': {
@@ -430,8 +378,9 @@ instance_action_events = {
             'traceback': {'type': ['string', 'null']}
         },
         'additionalProperties': False,
-        'required': ['event', 'start_time', 'finish_time', 'result',
-                     'traceback']
+        # NOTE(zhufl): events.traceback can only be seen by admin users
+        # with default policy.json, so it shouldn't be a required field.
+        'required': ['event', 'start_time', 'finish_time', 'result']
     }
 }
 

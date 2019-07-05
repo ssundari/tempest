@@ -20,7 +20,7 @@ set_get_flavor_extra_specs = {
             'extra_specs': {
                 'type': 'object',
                 'patternProperties': {
-                    '^[a-zA-Z0-9_\-\. :]+$': {'type': 'string'}
+                    r'^[a-zA-Z0-9_\-\. :]+$': {'type': 'string'}
                 }
             }
         },
@@ -29,12 +29,16 @@ set_get_flavor_extra_specs = {
     }
 }
 
+unset_flavor_extra_specs = {
+    'status_code': [200]
+}
+
 set_get_flavor_extra_specs_key = {
     'status_code': [200],
     'response_body': {
         'type': 'object',
         'patternProperties': {
-            '^[a-zA-Z0-9_\-\. :]+$': {'type': 'string'}
+            r'^[a-zA-Z0-9_\-\. :]+$': {'type': 'string'}
         }
     }
 }
