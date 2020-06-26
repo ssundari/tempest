@@ -13,6 +13,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import operator
+
 from oslo_utils import timeutils
 import six
 
@@ -40,10 +42,27 @@ class TokensV3Test(base.BaseIdentityV3Test):
         authenticated_token = self.non_admin_client.show_token(
             subject_token)['token']
         # sanity checking to make sure they are indeed the same token
+        # If there are roles in the token, sort the roles
+        authenticated_token_roles = authenticated_token.get("roles")
+        if authenticated_token_roles:
+            authenticated_token["roles"] = authenticated_token_roles.sort(
+                key=operator.itemgetter('id'))
+        token_body_roles = token_body.get("roles")
+        if token_body_roles:
+            token_body["roles"] = token_body_roles.sort(
+                key=operator.itemgetter('id'))
         self.assertEqual(authenticated_token, token_body)
         # test to see if token has been properly authenticated
         self.assertEqual(authenticated_token['user']['id'], user_id)
-        self.assertEqual(authenticated_token['user']['name'], username)
+        # NOTE: resource name that are case-sensitive in keystone
+        # depends on backends such as MySQL or LDAP which are
+        # case-insensitive, case-preserving. Resource name is
+        # returned as it is stored in the backend, not as it is
+        # requested. Verifying the username with both lower-case to
+        # avoid failure on different backends
+        self.assertEqual(
+            authenticated_token['user']['name'].lower(), username.lower())
+
         self.non_admin_client.delete_token(subject_token)
         self.assertRaises(
             lib_exc.NotFound, self.non_admin_client.show_token, subject_token)
@@ -84,10 +103,17 @@ class TokensV3Test(base.BaseIdentityV3Test):
             self.assertIsNotNone(subject_id, 'Expected user ID in token.')
 
         subject_name = resp['user']['name']
+
         if username:
-            self.assertEqual(subject_name, username)
+            # NOTE: resource name that are case-sensitive in keystone
+            # depends on backends such as MySQL or LDAP which are
+            # case-insensitive, case-preserving. Resource name is
+            # returned as it is stored in the backend, not as it is
+            # requested. Verifying the username with both lower-case to
+            # avoid failure on different backends
+            self.assertEqual(subject_name.lower(), username.lower())
         else:
-            # Expect a user name, but don't know what it will be.
+            # Expect a user name, but don't know what it will be
             self.assertIsNotNone(subject_name, 'Expected user name in token.')
 
         self.assertEqual(resp['methods'][0], 'password')
@@ -110,7 +136,15 @@ class TokensV3Test(base.BaseIdentityV3Test):
             subject_token)['token']
         self.assertEqual(resp['x-subject-token'], subject_token)
         self.assertEqual(token_details['user']['id'], user.user_id)
-        self.assertEqual(token_details['user']['name'], user.username)
+        # NOTE: resource name that are case-sensitive in keystone
+        # depends on backends such as MySQL or LDAP which are
+        # case-insensitive, case-preserving. Resource name is
+        # returned as it is stored in the backend, not as it is
+        # requested. Verifying the username with both lower-case to
+        # avoid failure on different backends
+        self.assertEqual(
+            token_details['user']['name'].lower(),
+            user.username.lower())
         # Perform Delete Token
         self.non_admin_client.delete_token(subject_token)
         self.assertRaises(lib_exc.NotFound,

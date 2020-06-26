@@ -16,6 +16,7 @@
 from oslo_serialization import jsonutils as json
 from six.moves.urllib import parse as urllib
 
+from tempest.lib.api_schema.response.volume import volume_types as schema
 from tempest.lib.common import rest_client
 from tempest.lib import exceptions as lib_exc
 
@@ -40,7 +41,7 @@ class TypesClient(rest_client.RestClient):
 
         For a full list of available parameters, please refer to the official
         API reference:
-        https://developer.openstack.org/api-ref/block-storage/v3/index.html#list-all-volume-types
+        https://docs.openstack.org/api-ref/block-storage/v3/index.html#list-all-volume-types
         """
         url = 'types'
         if params:
@@ -48,7 +49,7 @@ class TypesClient(rest_client.RestClient):
 
         resp, body = self.get(url)
         body = json.loads(body)
-        self.expected_success(200, resp.status)
+        self.validate_response(schema.list_volume_types, resp, body)
         return rest_client.ResponseBody(resp, body)
 
     def show_volume_type(self, volume_type_id):
@@ -56,12 +57,12 @@ class TypesClient(rest_client.RestClient):
 
         For a full list of available parameters, please refer to the official
         API reference:
-        https://developer.openstack.org/api-ref/block-storage/v3/index.html#show-volume-type-detail
+        https://docs.openstack.org/api-ref/block-storage/v3/index.html#show-volume-type-detail
         """
         url = "types/%s" % volume_type_id
         resp, body = self.get(url)
         body = json.loads(body)
-        self.expected_success(200, resp.status)
+        self.validate_response(schema.show_volume_type, resp, body)
         return rest_client.ResponseBody(resp, body)
 
     def create_volume_type(self, **kwargs):
@@ -69,12 +70,12 @@ class TypesClient(rest_client.RestClient):
 
         For a full list of available parameters, please refer to the official
         API reference:
-        https://developer.openstack.org/api-ref/block-storage/v3/index.html#create-a-volume-type
+        https://docs.openstack.org/api-ref/block-storage/v3/index.html#create-a-volume-type
         """
         post_body = json.dumps({'volume_type': kwargs})
         resp, body = self.post('types', post_body)
         body = json.loads(body)
-        self.expected_success(200, resp.status)
+        self.validate_response(schema.create_volume_type, resp, body)
         return rest_client.ResponseBody(resp, body)
 
     def delete_volume_type(self, volume_type_id):
@@ -82,10 +83,10 @@ class TypesClient(rest_client.RestClient):
 
         For a full list of available parameters, please refer to the official
         API reference:
-        https://developer.openstack.org/api-ref/block-storage/v3/index.html#delete-a-volume-type
+        https://docs.openstack.org/api-ref/block-storage/v3/index.html#delete-a-volume-type
         """
         resp, body = self.delete("types/%s" % volume_type_id)
-        self.expected_success(202, resp.status)
+        self.validate_response(schema.delete_volume_type, resp, body)
         return rest_client.ResponseBody(resp, body)
 
     def list_volume_types_extra_specs(self, volume_type_id, **params):
@@ -93,7 +94,7 @@ class TypesClient(rest_client.RestClient):
 
         For a full list of available parameters, please refer to the official
         API reference:
-        https://developer.openstack.org/api-ref/block-storage/v3/#show-all-extra-specifications-for-volume-type
+        https://docs.openstack.org/api-ref/block-storage/v3/#show-all-extra-specifications-for-volume-type
         """
         url = 'types/%s/extra_specs' % volume_type_id
         if params:
@@ -101,7 +102,8 @@ class TypesClient(rest_client.RestClient):
 
         resp, body = self.get(url)
         body = json.loads(body)
-        self.expected_success(200, resp.status)
+        self.validate_response(
+            schema.list_volume_types_extra_specs, resp, body)
         return rest_client.ResponseBody(resp, body)
 
     def show_volume_type_extra_specs(self, volume_type_id, extra_specs_name):
@@ -109,7 +111,8 @@ class TypesClient(rest_client.RestClient):
         url = "types/%s/extra_specs/%s" % (volume_type_id, extra_specs_name)
         resp, body = self.get(url)
         body = json.loads(body)
-        self.expected_success(200, resp.status)
+        self.validate_response(
+            schema.show_volume_types_extra_specs, resp, body)
         return rest_client.ResponseBody(resp, body)
 
     def create_volume_type_extra_specs(self, volume_type_id, extra_specs):
@@ -122,14 +125,16 @@ class TypesClient(rest_client.RestClient):
         post_body = json.dumps({'extra_specs': extra_specs})
         resp, body = self.post(url, post_body)
         body = json.loads(body)
-        self.expected_success(200, resp.status)
+        self.validate_response(
+            schema.create_volume_types_extra_specs, resp, body)
         return rest_client.ResponseBody(resp, body)
 
     def delete_volume_type_extra_specs(self, volume_type_id, extra_spec_name):
         """Deletes the specified volume type extra spec."""
         resp, body = self.delete("types/%s/extra_specs/%s" % (
             volume_type_id, extra_spec_name))
-        self.expected_success(202, resp.status)
+        self.validate_response(
+            schema.delete_volume_types_extra_specs, resp, body)
         return rest_client.ResponseBody(resp, body)
 
     def update_volume_type(self, volume_type_id, **kwargs):
@@ -137,12 +142,12 @@ class TypesClient(rest_client.RestClient):
 
         For a full list of available parameters, please refer to the official
         API reference:
-        https://developer.openstack.org/api-ref/block-storage/v3/index.html#update-a-volume-type
+        https://docs.openstack.org/api-ref/block-storage/v3/index.html#update-a-volume-type
         """
         put_body = json.dumps({'volume_type': kwargs})
         resp, body = self.put('types/%s' % volume_type_id, put_body)
         body = json.loads(body)
-        self.expected_success(200, resp.status)
+        self.validate_response(schema.update_volume_types, resp, body)
         return rest_client.ResponseBody(resp, body)
 
     def update_volume_type_extra_specs(self, volume_type_id, extra_spec_name,
@@ -156,13 +161,14 @@ class TypesClient(rest_client.RestClient):
 
         For a full list of available parameters, please refer to the official
         API reference:
-        https://developer.openstack.org/api-ref/block-storage/v3/index.html#update-extra-specification-for-volume-type
+        https://docs.openstack.org/api-ref/block-storage/v3/index.html#update-extra-specification-for-volume-type
         """
         url = "types/%s/extra_specs/%s" % (volume_type_id, extra_spec_name)
         put_body = json.dumps(extra_specs)
         resp, body = self.put(url, put_body)
         body = json.loads(body)
-        self.expected_success(200, resp.status)
+        self.validate_response(
+            schema.update_volume_type_extra_specs, resp, body)
         return rest_client.ResponseBody(resp, body)
 
     def add_type_access(self, volume_type_id, **kwargs):
@@ -170,12 +176,12 @@ class TypesClient(rest_client.RestClient):
 
         For a full list of available parameters, please refer to the official
         API reference:
-        https://developer.openstack.org/api-ref/block-storage/v3/index.html#add-private-volume-type-access-to-project
+        https://docs.openstack.org/api-ref/block-storage/v3/index.html#add-private-volume-type-access-to-project
         """
         post_body = json.dumps({'addProjectAccess': kwargs})
         url = 'types/%s/action' % volume_type_id
         resp, body = self.post(url, post_body)
-        self.expected_success(202, resp.status)
+        self.validate_response(schema.add_type_access, resp, body)
         return rest_client.ResponseBody(resp, body)
 
     def remove_type_access(self, volume_type_id, **kwargs):
@@ -183,12 +189,12 @@ class TypesClient(rest_client.RestClient):
 
         For a full list of available parameters, please refer to the official
         API reference:
-        https://developer.openstack.org/api-ref/block-storage/v3/index.html#remove-private-volume-type-access-from-project
+        https://docs.openstack.org/api-ref/block-storage/v3/index.html#remove-private-volume-type-access-from-project
         """
         post_body = json.dumps({'removeProjectAccess': kwargs})
         url = 'types/%s/action' % volume_type_id
         resp, body = self.post(url, post_body)
-        self.expected_success(202, resp.status)
+        self.validate_response(schema.remove_type_access, resp, body)
         return rest_client.ResponseBody(resp, body)
 
     def list_type_access(self, volume_type_id):
@@ -196,10 +202,10 @@ class TypesClient(rest_client.RestClient):
 
         For a full list of available parameters, please refer to the official
         API reference:
-        https://developer.openstack.org/api-ref/block-storage/v3/index.html#list-private-volume-type-access-detail
+        https://docs.openstack.org/api-ref/block-storage/v3/index.html#list-private-volume-type-access-detail
         """
         url = 'types/%s/os-volume-type-access' % volume_type_id
         resp, body = self.get(url)
         body = json.loads(body)
-        self.expected_success(200, resp.status)
+        self.validate_response(schema.list_type_access, resp, body)
         return rest_client.ResponseBody(resp, body)

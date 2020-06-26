@@ -27,6 +27,7 @@ from tempest import clients
 from tempest.common import credentials_factory as credentials
 from tempest.common import utils
 from tempest import config
+from tempest.lib import base as lib_base
 from tempest.lib.common import fixed_network
 from tempest.lib.common import profiler
 from tempest.lib.common import validation_resources as vr
@@ -148,11 +149,25 @@ class BaseTestCase(testtools.testcase.WithAttributes,
         if hasattr(super(BaseTestCase, cls), 'setUpClass'):
             super(BaseTestCase, cls).setUpClass()
         # All the configuration checks that may generate a skip
-        cls.skip_checks()
-        if not cls.__skip_checks_called:
-            raise RuntimeError("skip_checks for %s did not call the super's "
-                               "skip_checks" % cls.__name__)
+        # TODO(gmann): cls.handle_skip_exception is really workaround for
+        # testtools bug- https://github.com/testing-cabal/testtools/issues/272
+        # stestr which is used by Tempest internally to run the test switch
+        # the customize test runner(which use stdlib unittest) for >=py3.5
+        # else testtools.run.- https://github.com/mtreinish/stestr/pull/265
+        # These two test runner are not compatible due to skip exception
+        # handling(due to unittest2). testtools.run treat unittestt.SkipTest
+        # as error and stdlib unittest treat unittest2.case.SkipTest raised
+        # by testtools.TestCase.skipException.
+        # The below workaround can be removed once testtools fix issue# 272.
+        orig_skip_exception = testtools.TestCase.skipException
+        lib_base._handle_skip_exception()
         try:
+            cls.skip_checks()
+
+            if not cls.__skip_checks_called:
+                raise RuntimeError(
+                    "skip_checks for %s did not call the super's "
+                    "skip_checks" % cls.__name__)
             # Allocation of all required credentials and client managers
             cls._teardowns.append(('credentials', cls.clear_credentials))
             cls.setup_credentials()
@@ -173,6 +188,8 @@ class BaseTestCase(testtools.testcase.WithAttributes,
                 six.reraise(etype, value, trace)
             finally:
                 del trace  # to avoid circular refs
+        finally:
+            testtools.TestCase.skipException = orig_skip_exception
 
     @classmethod
     def tearDownClass(cls):

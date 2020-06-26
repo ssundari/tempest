@@ -60,16 +60,16 @@ name (tempest.conf) is overridden.
 """
 
 import argparse
+import configparser
 import os
 import re
 import sys
 import traceback
+from urllib import parse as urlparse
 
 from cliff import command
 from oslo_log import log as logging
 from oslo_serialization import jsonutils as json
-from six import moves
-from six.moves.urllib import parse as urlparse
 
 from tempest import clients
 from tempest.common import credentials_factory as credentials
@@ -433,20 +433,15 @@ def parse_args():
 
 
 def main(opts=None):
-    print('Running config verification...')
-    if opts is None:
-        print("Use of: 'verify-tempest-config' is deprecated, "
-              "please use: 'tempest verify-config'")
-        opts = parse_args()
     update = opts.update
     replace = opts.replace_ext
     global CONF_PARSER
 
     if update:
         conf_file = _get_config_file()
-        CONF_PARSER = moves.configparser.ConfigParser()
+        CONF_PARSER = configparser.ConfigParser()
         CONF_PARSER.optionxform = str
-        CONF_PARSER.readfp(conf_file)
+        CONF_PARSER.read_file(conf_file)
 
     # Indicate not to create network resources as part of getting credentials
     net_resources = {
@@ -497,7 +492,3 @@ class TempestVerifyConfig(command.Command):
             LOG.exception("Failure verifying configuration.")
             traceback.print_exc()
             raise
-
-
-if __name__ == "__main__":
-    main()

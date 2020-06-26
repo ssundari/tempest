@@ -25,6 +25,7 @@ CONF = config.CONF
 
 
 class ServersTestJSON(base.BaseV2ComputeTest):
+    create_default_network = True
 
     @classmethod
     def setup_clients(cls):
@@ -209,7 +210,8 @@ class ServerShowV263Test(base.BaseV2ComputeTest):
                                        server['id'], 'ACTIVE')
 
         # Check rebuild API response schema
-        self.servers_client.rebuild_server(server['id'], self.image_ref_alt)
+        self.servers_client.rebuild_server(
+            server['id'], CONF.compute.certified_image_ref)
         waiters.wait_for_server_status(self.servers_client,
                                        server['id'], 'ACTIVE')
 

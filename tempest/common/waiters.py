@@ -124,6 +124,12 @@ def wait_for_server_termination(client, server_id, ignore_error=False):
             raise lib_exc.DeleteErrorException(
                 "Server %s failed to delete and is in ERROR status" %
                 server_id)
+        if server_status == 'SOFT_DELETED':
+            # Soft-deleted instances need to be forcibly deleted to
+            # prevent some test cases from failing.
+            LOG.debug("Automatically force-deleting soft-deleted server %s",
+                      server_id)
+            client.force_delete_server(server_id)
 
         if int(time.time()) - start_time >= client.build_timeout:
             raise lib_exc.TimeoutException
@@ -215,6 +221,22 @@ def wait_for_volume_resource_status(client, resource_id, status):
             raise lib_exc.TimeoutException(message)
     LOG.info('%s %s reached %s after waiting for %f seconds',
              resource_name, resource_id, status, time.time() - start)
+
+
+def wait_for_volume_attachment_remove(client, volume_id, attachment_id):
+    """Waits for a volume attachment to be removed from a given volume."""
+    start = int(time.time())
+    attachments = client.show_volume(volume_id)['volume']['attachments']
+    while any(attachment_id == a['attachment_id'] for a in attachments):
+        time.sleep(client.build_interval)
+        if int(time.time()) - start >= client.build_timeout:
+            message = ('Failed to remove attachment %s from volume %s '
+                       'within the required time (%s s).' %
+                       (attachment_id, volume_id, client.build_timeout))
+            raise lib_exc.TimeoutException(message)
+        attachments = client.show_volume(volume_id)['volume']['attachments']
+    LOG.info('Attachment %s removed from volume %s after waiting for %f '
+             'seconds', attachment_id, volume_id, time.time() - start)
 
 
 def wait_for_volume_migration(client, volume_id, new_host):

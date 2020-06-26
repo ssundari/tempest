@@ -48,6 +48,24 @@ Command Documentation
    workspace
    run
 
+Supported OpenStack Releases and Python Versions
+------------------------------------------------
+
+.. toctree::
+   :maxdepth: 1
+
+   supported_version
+
+For Contributors
+================
+
+* If you are a new contributor to Tempest please refer: :doc:`contributor/contributing`
+
+.. toctree::
+   :hidden:
+
+   contributor/contributing
+
 Developers Guide
 ================
 
@@ -69,8 +87,31 @@ Plugins
 .. toctree::
    :maxdepth: 2
 
-   plugin
-   plugin-registry
+   plugins/index
+
+Tempest & Plugins Compatible Version Policy
+-------------------------------------------
+
+.. toctree::
+   :maxdepth: 2
+
+   tempest_and_plugins_compatible_version_policy
+
+Stable Branch Support Policy
+----------------------------
+
+.. toctree::
+   :maxdepth: 2
+
+   stable_branch_support_policy
+
+Stable Branch Testing Policy
+----------------------------
+
+.. toctree::
+   :maxdepth: 2
+
+   stable_branch_testing_policy
 
 Library
 -------
@@ -80,15 +121,12 @@ Library
 
    library
 
-Support Policy
---------------
+Search
+======
 
-.. toctree::
-   :maxdepth: 2
+.. only:: html
 
-   stable_branch_support_policy
+  * :ref:`Tempest document search <search>`: Search the contents of this document.
 
-Indices and tables
-==================
-
-* :ref:`search`
+* `OpenStack wide search <https://docs.openstack.org>`_: Search the wider
+  set of OpenStack documentation, including forums.

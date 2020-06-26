@@ -46,7 +46,6 @@ Param    CLI                          Environment Variable
 Username ``--os-username``            OS_USERNAME
 Password ``--os-password``            OS_PASSWORD
 Project  ``--os-project-name``        OS_PROJECT_NAME
-Tenant   ``--os-tenant-name`` (depr.) OS_TENANT_NAME
 Domain   ``--os-domain-name``         OS_DOMAIN_NAME
 ======== ============================ ====================
 
@@ -75,9 +74,6 @@ Optional Arguments
 * ``--os-project-name <auth-project-name>`` (Optional) Project to request
   authorization on. Defaults to env[OS_PROJECT_NAME].
 
-* ``--os-tenant-name <auth-tenant-name>`` (Optional, deprecated) Tenant to
-  request authorization on. Defaults to env[OS_TENANT_NAME].
-
 * ``--os-domain-name <auth-domain-name>`` (Optional) Domain the user and
   project belong to. Defaults to env[OS_DOMAIN_NAME].
 
@@ -100,6 +96,7 @@ Optional Arguments
 To see help on specific argument, please do: ``tempest account-generator
 [OPTIONS] <accounts_file.yaml> -h``.
 """
+
 import argparse
 import os
 import traceback
@@ -139,7 +136,7 @@ def get_credential_provider(opts):
                          'dhcp': True}
     admin_creds_dict = {'username': opts.os_username,
                         'password': opts.os_password}
-    _project_name = opts.os_project_name or opts.os_tenant_name
+    _project_name = opts.os_project_name
     if opts.identity_version == 3:
         admin_creds_dict['project_name'] = _project_name
         admin_creds_dict['domain_name'] = opts.os_domain_name or 'Default'
@@ -203,6 +200,14 @@ def dump_accounts(resources, identity_version, account_file):
     LOG.info('%s generated successfully!', account_file)
 
 
+def positive_int(number):
+    number = int(number)
+    if number <= 0:
+        raise argparse.ArgumentTypeError("Concurrency value should be a "
+                                         "positive number")
+    return number
+
+
 def _parser_add_args(parser):
     parser.add_argument('-c', '--config-file',
                         metavar='/etc/tempest.conf',
@@ -221,10 +226,6 @@ def _parser_add_args(parser):
                         metavar='<auth-project-name>',
                         default=os.environ.get('OS_PROJECT_NAME'),
                         help='Defaults to env[OS_PROJECT_NAME].')
-    parser.add_argument('--os-tenant-name',
-                        metavar='<auth-tenant-name>',
-                        default=os.environ.get('OS_TENANT_NAME'),
-                        help='Defaults to env[OS_TENANT_NAME].')
     parser.add_argument('--os-domain-name',
                         metavar='<auth-domain-name>',
                         default=os.environ.get('OS_DOMAIN_NAME'),
@@ -236,7 +237,7 @@ def _parser_add_args(parser):
                         help='Resources tag')
     parser.add_argument('-r', '--concurrency',
                         default=1,
-                        type=int,
+                        type=positive_int,
                         required=False,
                         dest='concurrency',
                         help='Concurrency count')
@@ -256,21 +257,6 @@ def _parser_add_args(parser):
                         help='Output accounts yaml file')
 
 
-def get_options():
-    usage_string = ('tempest account-generator [-h] <ARG> ...\n\n'
-                    'To see help on specific argument, do:\n'
-                    'tempest account-generator <ARG> -h')
-    parser = argparse.ArgumentParser(
-        description=DESCRIPTION,
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        usage=usage_string
-    )
-
-    _parser_add_args(parser)
-    opts = parser.parse_args()
-    return opts
-
-
 class TempestAccountGenerator(command.Command):
 
     def get_parser(self, prog_name):
@@ -280,7 +266,19 @@ class TempestAccountGenerator(command.Command):
 
     def take_action(self, parsed_args):
         try:
-            main(parsed_args)
+            if parsed_args.config_file:
+                config.CONF.set_config_path(parsed_args.config_file)
+            setup_logging()
+            resources = []
+            for count in range(parsed_args.concurrency):
+                # Use N different cred_providers to obtain different
+                # sets of creds
+                cred_provider = get_credential_provider(parsed_args)
+                resources.extend(generate_resources(cred_provider,
+                                                    parsed_args.admin))
+            dump_accounts(resources, parsed_args.identity_version,
+                          parsed_args.accounts)
+
         except Exception:
             LOG.exception("Failure generating test accounts.")
             traceback.print_exc()
@@ -288,30 +286,3 @@ class TempestAccountGenerator(command.Command):
 
     def get_description(self):
         return DESCRIPTION
-
-
-def main(opts=None):
-    log_warning = False
-    if not opts:
-        log_warning = True
-        opts = get_options()
-    if opts.config_file:
-        config.CONF.set_config_path(opts.config_file)
-    setup_logging()
-    if log_warning:
-        LOG.warning("Use of: 'tempest-account-generator' is deprecated, "
-                    "please use: 'tempest account-generator'")
-    if opts.os_tenant_name:
-        LOG.warning("'os-tenant-name' and 'OS_TENANT_NAME' are both "
-                    "deprecated, please use 'os-project-name' or "
-                    "'OS_PROJECT_NAME' instead")
-    resources = []
-    for count in range(opts.concurrency):
-        # Use N different cred_providers to obtain different sets of creds
-        cred_provider = get_credential_provider(opts)
-        resources.extend(generate_resources(cred_provider, opts.admin))
-    dump_accounts(resources, opts.identity_version, opts.accounts)
-
-
-if __name__ == "__main__":
-    main()

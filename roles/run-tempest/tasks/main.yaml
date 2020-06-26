@@ -20,6 +20,22 @@
     default_concurrency: "{{ num_cores|int // 2 }}"
   when: num_cores|int > 3
 
+- name: Override target branch
+  set_fact:
+    target_branch: "{{ zuul.override_checkout }}"
+  when: zuul.override_checkout is defined
+
+- name: Use stable branch upper-constraints till stable/rocky
+  set_fact:
+    # TOX_CONSTRAINTS_FILE is new name, UPPER_CONSTRAINTS_FILE is old one, best to set both
+    tempest_tox_environment: "{{ tempest_tox_environment | combine({'UPPER_CONSTRAINTS_FILE': stable_constraints_file}) | combine({'TOX_CONSTRAINTS_FILE': stable_constraints_file}) }}"
+  when: target_branch in ["stable/ocata", "stable/pike", "stable/queens", "stable/rocky"]
+
+- name: Set OS_TEST_TIMEOUT if requested
+  set_fact:
+    tempest_tox_environment: "{{ tempest_tox_environment | combine({'OS_TEST_TIMEOUT': tempest_test_timeout}) }}"
+  when: tempest_test_timeout != ''
+
 - when:
     - tempest_test_blacklist is defined
   block:
@@ -40,5 +56,7 @@
             --black-regex={{tempest_black_regex|quote}}
   args:
     chdir: "{{devstack_base_dir}}/tempest"
+  register: tempest_run_result
   become: true
   become_user: tempest
+  environment: "{{ tempest_tox_environment }}"
