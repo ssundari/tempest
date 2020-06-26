@@ -30,6 +30,7 @@ CONF = config.CONF
 
 
 class ServersNegativeTestJSON(base.BaseV2ComputeTest):
+    create_default_network = True
 
     def setUp(self):
         super(ServersNegativeTestJSON, self).setUp()
@@ -554,6 +555,7 @@ class ServersNegativeTestJSON(base.BaseV2ComputeTest):
 
 
 class ServersNegativeTestMultiTenantJSON(base.BaseV2ComputeTest):
+    create_default_network = True
 
     credentials = ['primary', 'alt']
 

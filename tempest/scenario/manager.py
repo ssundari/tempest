@@ -634,8 +634,7 @@ class ScenarioTest(tempest.test.BaseTestCase):
 
     def nova_volume_attach(self, server, volume_to_attach):
         volume = self.servers_client.attach_volume(
-            server['id'], volumeId=volume_to_attach['id'], device='/dev/%s'
-            % CONF.compute.volume_device_name)['volumeAttachment']
+            server['id'], volumeId=volume_to_attach['id'])['volumeAttachment']
         self.assertEqual(volume_to_attach['id'], volume['id'])
         waiters.wait_for_volume_resource_status(self.volumes_client,
                                                 volume['id'], 'in-use')
@@ -811,6 +810,42 @@ class ScenarioTest(tempest.test.BaseTestCase):
         server_details = cls.os_admin.servers_client.show_server(server_id)
         return server_details['server']['OS-EXT-SRV-ATTR:host']
 
+    def _get_bdm(self, source_id, source_type, delete_on_termination=False):
+        bd_map_v2 = [{
+            'uuid': source_id,
+            'source_type': source_type,
+            'destination_type': 'volume',
+            'boot_index': 0,
+            'delete_on_termination': delete_on_termination}]
+        return {'block_device_mapping_v2': bd_map_v2}
+
+    def boot_instance_from_resource(self, source_id,
+                                    source_type,
+                                    keypair=None,
+                                    security_group=None,
+                                    delete_on_termination=False,
+                                    name=None):
+        create_kwargs = dict()
+        if keypair:
+            create_kwargs['key_name'] = keypair['name']
+        if security_group:
+            create_kwargs['security_groups'] = [
+                {'name': security_group['name']}]
+        create_kwargs.update(self._get_bdm(
+            source_id,
+            source_type,
+            delete_on_termination=delete_on_termination))
+        if name:
+            create_kwargs['name'] = name
+
+        return self.create_server(image_id='', **create_kwargs)
+
+    def create_volume_from_image(self):
+        img_uuid = CONF.compute.image_ref
+        vol_name = data_utils.rand_name(
+            self.__class__.__name__ + '-volume-origin')
+        return self.create_volume(name=vol_name, imageRef=img_uuid)
+
 
 class NetworkScenarioTest(ScenarioTest):
     """Base class for network scenario tests.
@@ -931,18 +966,21 @@ class NetworkScenarioTest(ScenarioTest):
         # A port can have more than one IP address in some cases.
         # If the network is dual-stack (IPv4 + IPv6), this port is associated
         # with 2 subnets
-        p_status = ['ACTIVE']
-        # NOTE(vsaienko) With Ironic, instances live on separate hardware
-        # servers. Neutron does not bind ports for Ironic instances, as a
-        # result the port remains in the DOWN state.
-        # TODO(vsaienko) remove once bug: #1599836 is resolved.
-        if getattr(CONF.service_available, 'ironic', False):
-            p_status.append('DOWN')
+
+        def _is_active(port):
+            # NOTE(vsaienko) With Ironic, instances live on separate hardware
+            # servers. Neutron does not bind ports for Ironic instances, as a
+            # result the port remains in the DOWN state. This has been fixed
+            # with the introduction of the networking-baremetal plugin but
+            # it's not mandatory (and is not used on all stable branches).
+            return (port['status'] == 'ACTIVE' or
+                    port.get('binding:vnic_type') == 'baremetal')
+
         port_map = [(p["id"], fxip["ip_address"])
                     for p in ports
                     for fxip in p["fixed_ips"]
                     if (netutils.is_valid_ipv4(fxip["ip_address"]) and
-                        p['status'] in p_status)]
+                        _is_active(p))]
         inactive = [p for p in ports if p['status'] != 'ACTIVE']
         if inactive:
             LOG.warning("Instance has ports that are not ACTIVE: %s", inactive)
@@ -973,13 +1011,18 @@ class NetworkScenarioTest(ScenarioTest):
             port_id, ip4 = self._get_server_port_id_and_ip4(thing)
         else:
             ip4 = None
-        result = client.create_floatingip(
-            floating_network_id=external_network_id,
-            port_id=port_id,
-            tenant_id=thing['tenant_id'],
-            fixed_ip_address=ip4
-        )
+
+        kwargs = {
+            'floating_network_id': external_network_id,
+            'port_id': port_id,
+            'tenant_id': thing['tenant_id'],
+            'fixed_ip_address': ip4,
+        }
+        if CONF.network.subnet_id:
+            kwargs['subnet_id'] = CONF.network.subnet_id
+        result = client.create_floatingip(**kwargs)
         floating_ip = result['floatingip']
+
         self.addCleanup(test_utils.call_and_ignore_notfound_exc,
                         client.delete_floatingip,
                         floating_ip['id'])
@@ -995,9 +1038,12 @@ class NetworkScenarioTest(ScenarioTest):
         floatingip_id = floating_ip['id']
 
         def refresh():
-            result = (self.floating_ips_client.
-                      show_floatingip(floatingip_id)['floatingip'])
-            return status == result['status']
+            floating_ip = (self.floating_ips_client.
+                           show_floatingip(floatingip_id)['floatingip'])
+            if status == floating_ip['status']:
+                LOG.info("FloatingIP: {fp} is at status: {st}"
+                         .format(fp=floating_ip, st=status))
+            return status == floating_ip['status']
 
         if not test_utils.call_until_true(refresh,
                                           CONF.network.build_timeout,
@@ -1009,8 +1055,6 @@ class NetworkScenarioTest(ScenarioTest):
                                      "failed  to reach status: {st}"
                              .format(fp=floating_ip, cst=floating_ip['status'],
                                      st=status))
-        LOG.info("FloatingIP: {fp} is at status: {st}"
-                 .format(fp=floating_ip, st=status))
 
     def check_tenant_network_connectivity(self, server,
                                           username,

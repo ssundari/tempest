@@ -123,7 +123,8 @@ class RoutersTest(base.BaseNetworkTest):
         router = self.create_router()
         self.addCleanup(self.delete_router, router)
         port_body = self.ports_client.create_port(
-            network_id=network['id'])
+            network_id=network['id'],
+            name=data_utils.rand_name(self.__class__.__name__))
         # add router interface to port created above
         interface = self.routers_client.add_router_interface(
             router['id'],
@@ -140,38 +141,6 @@ class RoutersTest(base.BaseNetworkTest):
                          router['id'])
         self.routers_client.remove_router_interface(
             router['id'], port_id=port_body['port']['id'])
-
-    @decorators.idempotent_id('cbe42f84-04c2-11e7-8adb-fa163e4fa634')
-    @utils.requires_ext(extension='ext-gw-mode', service='network')
-    @testtools.skipUnless(CONF.network.public_network_id,
-                          'The public_network_id option must be specified.')
-    @decorators.skip_because(bug='1676207')
-    def test_create_router_set_gateway_with_fixed_ip(self):
-        # Don't know public_network_address, so at first create address
-        # from public_network and delete
-        port = self.admin_ports_client.create_port(
-            network_id=CONF.network.public_network_id)['port']
-        self.admin_ports_client.delete_port(port_id=port['id'])
-
-        fixed_ip = {
-            'subnet_id': port['fixed_ips'][0]['subnet_id'],
-            'ip_address': port['fixed_ips'][0]['ip_address']
-        }
-        external_gateway_info = {
-            'network_id': CONF.network.public_network_id,
-            'external_fixed_ips': [fixed_ip]
-        }
-
-        # Create a router and set gateway to fixed_ip
-        router = self.admin_routers_client.create_router(
-            external_gateway_info=external_gateway_info)['router']
-        self.addCleanup(test_utils.call_and_ignore_notfound_exc,
-                        self.admin_routers_client.delete_router,
-                        router_id=router['id'])
-        # Examine router's gateway is equal to fixed_ip
-        self.assertEqual(router['external_gateway_info'][
-                         'external_fixed_ips'][0]['ip_address'],
-                         fixed_ip['ip_address'])
 
     @decorators.idempotent_id('c86ac3a8-50bd-4b00-a6b8-62af84a0765c')
     @utils.requires_ext(extension='extraroute', service='network')

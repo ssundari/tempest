@@ -16,6 +16,7 @@
 from oslo_serialization import jsonutils as json
 from six.moves.urllib import parse as urllib
 
+from tempest.lib.api_schema.response.volume import snapshots as schema
 from tempest.lib.common import rest_client
 from tempest.lib import exceptions as lib_exc
 
@@ -28,18 +29,20 @@ class SnapshotsClient(rest_client.RestClient):
 
         For a full list of available parameters, please refer to the official
         API reference:
-        https://developer.openstack.org/api-ref/block-storage/v3/index.html#list-accessible-snapshots
-        https://developer.openstack.org/api-ref/block-storage/v3/index.html#list-snapshots-and-details
+        https://docs.openstack.org/api-ref/block-storage/v3/index.html#list-accessible-snapshots
+        https://docs.openstack.org/api-ref/block-storage/v3/index.html#list-snapshots-and-details
         """
         url = 'snapshots'
+        list_schema = schema.list_snapshots_no_detail
         if detail:
             url += '/detail'
+            list_schema = schema.list_snapshots_with_detail
         if params:
             url += '?%s' % urllib.urlencode(params)
 
         resp, body = self.get(url)
         body = json.loads(body)
-        self.expected_success(200, resp.status)
+        self.validate_response(list_schema, resp, body)
         return rest_client.ResponseBody(resp, body)
 
     def show_snapshot(self, snapshot_id):
@@ -47,12 +50,12 @@ class SnapshotsClient(rest_client.RestClient):
 
         For a full list of available parameters, please refer to the official
         API reference:
-        https://developer.openstack.org/api-ref/block-storage/v3/index.html#show-a-snapshot-s-details
+        https://docs.openstack.org/api-ref/block-storage/v3/index.html#show-a-snapshot-s-details
         """
         url = "snapshots/%s" % snapshot_id
         resp, body = self.get(url)
         body = json.loads(body)
-        self.expected_success(200, resp.status)
+        self.validate_response(schema.show_snapshot, resp, body)
         return rest_client.ResponseBody(resp, body)
 
     def create_snapshot(self, **kwargs):
@@ -60,12 +63,12 @@ class SnapshotsClient(rest_client.RestClient):
 
         For a full list of available parameters, please refer to the official
         API reference:
-        https://developer.openstack.org/api-ref/block-storage/v3/index.html#create-a-snapshot
+        https://docs.openstack.org/api-ref/block-storage/v3/index.html#create-a-snapshot
         """
         post_body = json.dumps({'snapshot': kwargs})
         resp, body = self.post('snapshots', post_body)
         body = json.loads(body)
-        self.expected_success(202, resp.status)
+        self.validate_response(schema.create_snapshot, resp, body)
         return rest_client.ResponseBody(resp, body)
 
     def update_snapshot(self, snapshot_id, **kwargs):
@@ -73,12 +76,12 @@ class SnapshotsClient(rest_client.RestClient):
 
         For a full list of available parameters, please refer to the official
         API reference:
-        https://developer.openstack.org/api-ref/block-storage/v3/index.html#update-a-snapshot
+        https://docs.openstack.org/api-ref/block-storage/v3/index.html#update-a-snapshot
         """
         put_body = json.dumps({'snapshot': kwargs})
         resp, body = self.put('snapshots/%s' % snapshot_id, put_body)
         body = json.loads(body)
-        self.expected_success(200, resp.status)
+        self.validate_response(schema.update_snapshot, resp, body)
         return rest_client.ResponseBody(resp, body)
 
     def delete_snapshot(self, snapshot_id):
@@ -86,10 +89,10 @@ class SnapshotsClient(rest_client.RestClient):
 
         For a full list of available parameters, please refer to the official
         API reference:
-        https://developer.openstack.org/api-ref/block-storage/v3/index.html#delete-a-snapshot
+        https://docs.openstack.org/api-ref/block-storage/v3/index.html#delete-a-snapshot
         """
         resp, body = self.delete("snapshots/%s" % snapshot_id)
-        self.expected_success(202, resp.status)
+        self.validate_response(schema.delete_snapshot, resp, body)
         return rest_client.ResponseBody(resp, body)
 
     def is_resource_deleted(self, id):
@@ -108,7 +111,7 @@ class SnapshotsClient(rest_client.RestClient):
         """Reset the specified snapshot's status."""
         post_body = json.dumps({'os-reset_status': {"status": status}})
         resp, body = self.post('snapshots/%s/action' % snapshot_id, post_body)
-        self.expected_success(202, resp.status)
+        self.validate_response(schema.reset_snapshot_status, resp, body)
         return rest_client.ResponseBody(resp, body)
 
     def update_snapshot_status(self, snapshot_id, **kwargs):
@@ -116,12 +119,12 @@ class SnapshotsClient(rest_client.RestClient):
 
         For a full list of available parameters, please refer to the official
         API reference:
-        https://developer.openstack.org/api-ref/block-storage/v3/#update-status-of-a-snapshot
+        https://docs.openstack.org/api-ref/block-storage/v3/#update-status-of-a-snapshot
         """
         post_body = json.dumps({'os-update_snapshot_status': kwargs})
         url = 'snapshots/%s/action' % snapshot_id
         resp, body = self.post(url, post_body)
-        self.expected_success(202, resp.status)
+        self.validate_response(schema.update_snapshot_status, resp, body)
         return rest_client.ResponseBody(resp, body)
 
     def create_snapshot_metadata(self, snapshot_id, metadata):
@@ -129,13 +132,13 @@ class SnapshotsClient(rest_client.RestClient):
 
         For a full list of available parameters, please refer to the official
         API reference:
-        https://developer.openstack.org/api-ref/block-storage/v3/index.html#create-a-snapshot-s-metadata
+        https://docs.openstack.org/api-ref/block-storage/v3/index.html#create-a-snapshot-s-metadata
         """
         put_body = json.dumps({'metadata': metadata})
         url = "snapshots/%s/metadata" % snapshot_id
         resp, body = self.post(url, put_body)
         body = json.loads(body)
-        self.expected_success(200, resp.status)
+        self.validate_response(schema.create_snapshot_metadata, resp, body)
         return rest_client.ResponseBody(resp, body)
 
     def show_snapshot_metadata(self, snapshot_id):
@@ -143,12 +146,12 @@ class SnapshotsClient(rest_client.RestClient):
 
         For a full list of available parameters, please refer to the official
         API reference:
-        https://developer.openstack.org/api-ref/block-storage/v3/index.html#show-a-snapshot-s-metadata
+        https://docs.openstack.org/api-ref/block-storage/v3/index.html#show-a-snapshot-s-metadata
         """
         url = "snapshots/%s/metadata" % snapshot_id
         resp, body = self.get(url)
         body = json.loads(body)
-        self.expected_success(200, resp.status)
+        self.validate_response(schema.show_snapshot_metadata, resp, body)
         return rest_client.ResponseBody(resp, body)
 
     def update_snapshot_metadata(self, snapshot_id, **kwargs):
@@ -156,13 +159,13 @@ class SnapshotsClient(rest_client.RestClient):
 
         For a full list of available parameters, please refer to the official
         API reference:
-        https://developer.openstack.org/api-ref/block-storage/v3/index.html#update-a-snapshot-s-metadata
+        https://docs.openstack.org/api-ref/block-storage/v3/index.html#update-a-snapshot-s-metadata
         """
         put_body = json.dumps(kwargs)
         url = "snapshots/%s/metadata" % snapshot_id
         resp, body = self.put(url, put_body)
         body = json.loads(body)
-        self.expected_success(200, resp.status)
+        self.validate_response(schema.update_snapshot_metadata, resp, body)
         return rest_client.ResponseBody(resp, body)
 
     def show_snapshot_metadata_item(self, snapshot_id, id):
@@ -170,7 +173,7 @@ class SnapshotsClient(rest_client.RestClient):
         url = "snapshots/%s/metadata/%s" % (snapshot_id, id)
         resp, body = self.get(url)
         body = json.loads(body)
-        self.expected_success(200, resp.status)
+        self.validate_response(schema.show_snapshot_metadata_item, resp, body)
         return rest_client.ResponseBody(resp, body)
 
     def update_snapshot_metadata_item(self, snapshot_id, id, **kwargs):
@@ -178,27 +181,29 @@ class SnapshotsClient(rest_client.RestClient):
 
         For a full list of available parameters, please refer to the official
         API reference:
-        https://developer.openstack.org/api-ref/block-storage/v3/#update-a-snapshot-s-metadata-for-a-specific-key
+        https://docs.openstack.org/api-ref/block-storage/v3/#update-a-snapshot-s-metadata-for-a-specific-key
         """
         put_body = json.dumps(kwargs)
         url = "snapshots/%s/metadata/%s" % (snapshot_id, id)
         resp, body = self.put(url, put_body)
         body = json.loads(body)
-        self.expected_success(200, resp.status)
+        self.validate_response(
+            schema.update_snapshot_metadata_item, resp, body)
         return rest_client.ResponseBody(resp, body)
 
     def delete_snapshot_metadata_item(self, snapshot_id, id):
         """Delete metadata item for the snapshot."""
         url = "snapshots/%s/metadata/%s" % (snapshot_id, id)
         resp, body = self.delete(url)
-        self.expected_success(200, resp.status)
+        self.validate_response(
+            schema.delete_snapshot_metadata_item, resp, body)
         return rest_client.ResponseBody(resp, body)
 
     def force_delete_snapshot(self, snapshot_id):
         """Force Delete Snapshot."""
         post_body = json.dumps({'os-force_delete': {}})
         resp, body = self.post('snapshots/%s/action' % snapshot_id, post_body)
-        self.expected_success(202, resp.status)
+        self.validate_response(schema.force_delete_snapshot, resp, body)
         return rest_client.ResponseBody(resp, body)
 
     def unmanage_snapshot(self, snapshot_id):
@@ -206,5 +211,5 @@ class SnapshotsClient(rest_client.RestClient):
         post_body = json.dumps({'os-unmanage': {}})
         url = 'snapshots/%s/action' % (snapshot_id)
         resp, body = self.post(url, post_body)
-        self.expected_success(202, resp.status)
+        self.validate_response(schema.unmanage_snapshot, resp, body)
         return rest_client.ResponseBody(resp, body)

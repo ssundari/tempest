@@ -39,6 +39,9 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
     """Base test case class for all Compute API tests."""
 
     force_tenant_isolation = False
+    # Set this to True in subclasses to create a default network. See
+    # https://bugs.launchpad.net/tempest/+bug/1844568
+    create_default_network = False
 
     # TODO(andreaf) We should care also for the alt_manager here
     # but only once client lazy load in the manager is done
@@ -49,16 +52,22 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
         super(BaseV2ComputeTest, cls).skip_checks()
         if not CONF.service_available.nova:
             raise cls.skipException("Nova is not available")
-        cfg_min_version = CONF.compute.min_microversion
-        cfg_max_version = CONF.compute.max_microversion
-        api_version_utils.check_skip_with_microversion(cls.min_microversion,
-                                                       cls.max_microversion,
-                                                       cfg_min_version,
-                                                       cfg_max_version)
+        api_version_utils.check_skip_with_microversion(
+            cls.min_microversion, cls.max_microversion,
+            CONF.compute.min_microversion, CONF.compute.max_microversion)
+        api_version_utils.check_skip_with_microversion(
+            cls.volume_min_microversion, cls.volume_max_microversion,
+            CONF.volume.min_microversion, CONF.volume.max_microversion)
+        api_version_utils.check_skip_with_microversion(
+            cls.placement_min_microversion, cls.placement_max_microversion,
+            CONF.placement.min_microversion, CONF.placement.max_microversion)
 
     @classmethod
     def setup_credentials(cls):
-        cls.set_network_resources()
+        # Setting network=True, subnet=True creates a default network
+        cls.set_network_resources(
+            network=cls.create_default_network,
+            subnet=cls.create_default_network)
         super(BaseV2ComputeTest, cls).setup_credentials()
 
     @classmethod
@@ -99,6 +108,8 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
         cls.versions_client = cls.os_primary.compute_versions_client
         if CONF.service_available.cinder:
             cls.volumes_client = cls.os_primary.volumes_client_latest
+            cls.attachments_client = cls.os_primary.attachments_client_latest
+            cls.snapshots_client = cls.os_primary.snapshots_client_latest
         if CONF.service_available.glance:
             if CONF.image_feature_enabled.api_v1:
                 cls.images_client = cls.os_primary.image_client
@@ -145,6 +156,14 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
             api_version_utils.select_request_microversion(
                 cls.min_microversion,
                 CONF.compute.min_microversion))
+        cls.volume_request_microversion = (
+            api_version_utils.select_request_microversion(
+                cls.volume_min_microversion,
+                CONF.volume.min_microversion))
+        cls.placement_request_microversion = (
+            api_version_utils.select_request_microversion(
+                cls.placement_min_microversion,
+                CONF.placement.min_microversion))
         cls.build_interval = CONF.compute.build_interval
         cls.build_timeout = CONF.compute.build_timeout
         cls.image_ref = CONF.compute.image_ref
@@ -209,7 +228,7 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
 
     @classmethod
     def create_test_server(cls, validatable=False, volume_backed=False,
-                           validation_resources=None, **kwargs):
+                           validation_resources=None, clients=None, **kwargs):
         """Wrapper utility that returns a test server.
 
         This wrapper utility calls the common create test server and
@@ -221,6 +240,7 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
         :param volume_backed: Whether the instance is volume backed or not.
         :param validation_resources: Dictionary of validation resources as
             returned by `get_class_validation_resources`.
+        :param clients: Client manager, defaults to os_primary.
         :param kwargs: Extra arguments are passed down to the
             `compute.create_test_server` call.
         """
@@ -237,8 +257,11 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
             not tenant_network):
             kwargs['networks'] = 'none'
 
+        if clients is None:
+            clients = cls.os_primary
+
         body, servers = compute.create_test_server(
-            cls.os_primary,
+            clients,
             validatable,
             validation_resources=validation_resources,
             tenant_network=tenant_network,
@@ -249,11 +272,11 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
         # and then wait for all
         for server in servers:
             cls.addClassResourceCleanup(waiters.wait_for_server_termination,
-                                        cls.servers_client, server['id'])
+                                        clients.servers_client, server['id'])
         for server in servers:
             cls.addClassResourceCleanup(
                 test_utils.call_and_ignore_notfound_exc,
-                cls.servers_client.delete_server, server['id'])
+                clients.servers_client.delete_server, server['id'])
 
         return body
 
@@ -470,7 +493,9 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
     def setUp(self):
         super(BaseV2ComputeTest, self).setUp()
         self.useFixture(api_microversion_fixture.APIMicroversionFixture(
-            compute_microversion=self.request_microversion))
+            compute_microversion=self.request_microversion,
+            volume_microversion=self.volume_request_microversion,
+            placement_microversion=self.placement_request_microversion))
 
     @classmethod
     def create_volume(cls, image_ref=None, **kwargs):
@@ -536,17 +561,42 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
 
         attachment = self.servers_client.attach_volume(
             server['id'], **attach_kwargs)['volumeAttachment']
-        # On teardown detach the volume and wait for it to be available. This
-        # is so we don't error out when trying to delete the volume during
-        # teardown.
-        self.addCleanup(waiters.wait_for_volume_resource_status,
-                        self.volumes_client, volume['id'], 'available')
+        # On teardown detach the volume and for multiattach volumes wait for
+        # the attachment to be removed. For non-multiattach volumes wait for
+        # the state of the volume to change to available. This is so we don't
+        # error out when trying to delete the volume during teardown.
+        if volume['multiattach']:
+            self.addCleanup(waiters.wait_for_volume_attachment_remove,
+                            self.volumes_client, volume['id'],
+                            attachment['id'])
+        else:
+            self.addCleanup(waiters.wait_for_volume_resource_status,
+                            self.volumes_client, volume['id'], 'available')
         # Ignore 404s on detach in case the server is deleted or the volume
         # is already detached.
         self.addCleanup(self._detach_volume, server, volume)
         waiters.wait_for_volume_resource_status(self.volumes_client,
                                                 volume['id'], 'in-use')
         return attachment
+
+    def create_volume_snapshot(self, volume_id, name=None, description=None,
+                               metadata=None, force=False):
+        name = name or data_utils.rand_name(
+            self.__class__.__name__ + '-snapshot')
+        snapshot = self.snapshots_client.create_snapshot(
+            volume_id=volume_id,
+            force=force,
+            display_name=name,
+            description=description,
+            metadata=metadata)['snapshot']
+        self.addCleanup(self.snapshots_client.wait_for_resource_deletion,
+                        snapshot['id'])
+        self.addCleanup(self.snapshots_client.delete_snapshot, snapshot['id'])
+        waiters.wait_for_volume_resource_status(self.snapshots_client,
+                                                snapshot['id'], 'available')
+        snapshot = self.snapshots_client.show_snapshot(
+            snapshot['id'])['snapshot']
+        return snapshot
 
     def assert_flavor_equal(self, flavor_id, server_flavor):
         """Check whether server_flavor equals to flavor.
@@ -606,8 +656,14 @@ class BaseV2ComputeAdminTest(BaseV2ComputeTest):
 
         svcs = self.os_admin.services_client.list_services(
             binary='nova-compute')['services']
-        hosts = [svc['host'] for svc in svcs
-                 if svc['state'] == 'up' and svc['status'] == 'enabled']
+        hosts = []
+        for svc in svcs:
+            if svc['state'] == 'up' and svc['status'] == 'enabled':
+                if CONF.compute.compute_volume_common_az:
+                    if svc['zone'] == CONF.compute.compute_volume_common_az:
+                        hosts.append(svc['host'])
+                else:
+                    hosts.append(svc['host'])
 
         for target_host in hosts:
             if source_host != target_host:

@@ -12,8 +12,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from unittest import mock
+
 import fixtures
-import mock
 from oslo_config import cfg
 
 from tempest.common import credentials_factory as credentials
@@ -110,7 +111,7 @@ class TestDynamicCredentialProvider(base.TestCase):
                           (200,
                            {'roles': [{'id': id, 'name': name},
                                       {'id': '1', 'name': 'FakeRole'},
-                                      {'id': '2', 'name': 'Member'}]}))))
+                                      {'id': '2', 'name': 'member'}]}))))
         return roles_fix
 
     def _mock_list_2_roles(self):
@@ -139,7 +140,7 @@ class TestDynamicCredentialProvider(base.TestCase):
             return_value=(rest_client.ResponseBody
                           (200, {'roles': [
                               {'id': '1', 'name': 'FakeRole'},
-                              {'id': '2', 'name': 'Member'}]}))))
+                              {'id': '2', 'name': 'member'}]}))))
         return roles_fix
 
     def _mock_list_ec2_credentials(self, user_id, tenant_id):
@@ -664,6 +665,6 @@ class TestDynamicCredentialProviderV3(TestDynamicCredentialProvider):
         with mock.patch('tempest.lib.common.dynamic_creds.LOG') as log_mock:
             creds._create_creds()
             log_mock.warning.assert_called_once_with(
-                "Member role already exists, ignoring conflict.")
+                "member role already exists, ignoring conflict.")
         creds.creds_client.assign_user_role.assert_called_once_with(
-            mock.ANY, mock.ANY, 'Member')
+            mock.ANY, mock.ANY, 'member')

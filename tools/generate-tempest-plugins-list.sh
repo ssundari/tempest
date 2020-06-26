@@ -61,7 +61,7 @@ function title_underline {
     printf " ===\n"
 }
 
-function print_plugin_table() {
+function print_plugin_table {
     title_underline ${name_col_len}
     printf "%-3s %-${name_col_len}s %s\n" "SR" "Plugin Name" "URL"
     title_underline ${name_col_len}
@@ -69,7 +69,7 @@ function print_plugin_table() {
     i=0
     for plugin in $1; do
         i=$((i+1))
-        giturl="https://opendev.org/openstack/${plugin}"
+        giturl="https://opendev.org/${plugin}"
         printf "%-3s %-${name_col_len}s %s\n" "$i" "${plugin}" "${giturl}"
     done
 
@@ -98,8 +98,8 @@ printf "\n\n"
 if [[ -r doc/source/data/tempest-plugins-registry.footer ]]; then
     cat doc/source/data/tempest-plugins-registry.footer
 fi
-) > doc/source/plugin-registry.rst
+) > doc/source/plugins/plugin-registry.rst
 
 if [[ -n ${1} ]]; then
-    cp doc/source/plugin-registry.rst ${1}/doc/source/plugin-registry.rst
+    cp doc/source/plugins/plugin-registry.rst ${1}/doc/source/plugins/plugin-registry.rst
 fi

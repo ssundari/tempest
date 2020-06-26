@@ -297,9 +297,19 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
         ip_mask = CONF.network.project_network_mask_bits
         # check if the address is not already in use, if not, set it
         if ' ' + ip_address + '/' + str(ip_mask) not in ip_output:
-            ssh_client.exec_command("sudo ip addr add %s/%s dev %s" % (
-                                    ip_address, ip_mask, new_nic))
-            ssh_client.exec_command("sudo ip link set %s up" % new_nic)
+            try:
+                ssh_client.exec_command("sudo ip addr add %s/%s dev %s" % (
+                                        ip_address, ip_mask, new_nic))
+                ssh_client.exec_command("sudo ip link set %s up" % new_nic)
+            except exceptions.SSHExecCommandFailed as exc:
+                if 'RTNETLINK answers: File exists' in str(exc):
+                    LOG.debug(
+                        'IP address %(ip_address)s is already set in device '
+                        '%(device)s\nPrevious "ip a" output: %(ip_output)s',
+                        {'ip_address': ip_address, 'device': new_nic,
+                         'ip_output': ip_output})
+                else:
+                    raise exc
 
     def _get_server_nics(self, ssh_client):
         reg = re.compile(r'(?P<num>\d+): (?P<nic_name>\w+)[@]?.*:')
@@ -346,10 +356,19 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
                 network_id=CONF.network.public_network_id)['subnets']
             if s['ip_version'] == 4
         ]
-        self.assertEqual(1, len(v4_subnets),
-                         "Found %d IPv4 subnets" % len(v4_subnets))
 
-        external_ips = [v4_subnets[0]['gateway_ip']]
+        if len(v4_subnets) > 1:
+            self.assertTrue(
+                CONF.network.subnet_id,
+                "Found %d subnets. Specify subnet using configuration "
+                "option [network].subnet_id."
+                % len(v4_subnets))
+            subnet = self.os_admin.subnets_client.show_subnet(
+                CONF.network.subnet_id)['subnet']
+            external_ips = [subnet['gateway_ip']]
+        else:
+            external_ips = [v4_subnets[0]['gateway_ip']]
+
         self._check_server_connectivity(self.floating_ip_tuple.floating_ip,
                                         external_ips)
 

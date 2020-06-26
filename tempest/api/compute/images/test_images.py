@@ -12,17 +12,20 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import testtools
+
 from tempest.api.compute import base
 from tempest.common import waiters
 from tempest import config
 from tempest.lib.common.utils import data_utils
 from tempest.lib import decorators
-import testtools
+from tempest.lib import exceptions as lib_exceptions
 
 CONF = config.CONF
 
 
 class ImagesTestJSON(base.BaseV2ComputeTest):
+    create_default_network = True
 
     @classmethod
     def skip_checks(cls):
@@ -47,12 +50,27 @@ class ImagesTestJSON(base.BaseV2ComputeTest):
     def test_delete_saving_image(self):
         server = self.create_test_server(wait_until='ACTIVE')
         self.addCleanup(self.servers_client.delete_server, server['id'])
-        image = self.create_image_from_server(server['id'],
-                                              wait_until='SAVING')
-        self.client.delete_image(image['id'])
-        msg = ('The image with ID {image_id} failed to be deleted'
-               .format(image_id=image['id']))
-        self.assertTrue(self.client.is_resource_deleted(image['id']), msg)
+        # wait for server active to avoid conflict when deleting server
+        # in task_state image_snapshot
+        self.addCleanup(waiters.wait_for_server_status, self.servers_client,
+                        server['id'], 'ACTIVE')
+        snapshot_name = data_utils.rand_name('test-snap')
+        try:
+            image = self.create_image_from_server(server['id'],
+                                                  name=snapshot_name,
+                                                  wait_until='SAVING')
+            self.client.delete_image(image['id'])
+            msg = ('The image with ID {image_id} failed to be deleted'
+                   .format(image_id=image['id']))
+            self.assertTrue(self.client.is_resource_deleted(image['id']),
+                            msg)
+            self.assertEqual(snapshot_name, image['name'])
+        except lib_exceptions.TimeoutException as ex:
+            # If timeout is reached, we don't need to check state,
+            # since, it wouldn't be a 'SAVING' state atleast and apart from
+            # it, this testcase doesn't have scope for other state transition
+            # Hence, skip the test.
+            raise self.skipException("This test is skipped because " + str(ex))
 
     @decorators.idempotent_id('aaacd1d0-55a2-4ce8-818a-b5439df8adc9')
     def test_create_image_from_stopped_server(self):

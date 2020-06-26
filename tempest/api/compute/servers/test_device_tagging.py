@@ -12,6 +12,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from json import decoder as json_decoder
+
 from oslo_log import log as logging
 from oslo_serialization import jsonutils as json
 
@@ -110,7 +112,11 @@ class TaggedBootDevicesTest(DeviceTaggingBase):
     max_microversion = '2.32'
 
     def verify_device_metadata(self, md_json):
-        md_dict = json.loads(md_json)
+        try:
+            md_dict = json.loads(md_json)
+        except (json_decoder.JSONDecodeError, TypeError):
+            return False
+
         for d in md_dict['devices']:
             if d['type'] == 'nic':
                 if d['mac'] == self.port1['mac_address']:
@@ -175,11 +181,13 @@ class TaggedBootDevicesTest(DeviceTaggingBase):
         # Create ports
         self.port1 = self.ports_client.create_port(
             network_id=net1['id'],
+            name=data_utils.rand_name(self.__class__.__name__),
             fixed_ips=[{'subnet_id': subnet1['id']}])['port']
         self.addCleanup(self.ports_client.delete_port, self.port1['id'])
 
         self.port2 = self.ports_client.create_port(
             network_id=net1['id'],
+            name=data_utils.rand_name(self.__class__.__name__),
             fixed_ips=[{'subnet_id': subnet1['id']}])['port']
         self.addCleanup(self.ports_client.delete_port, self.port2['id'])
 
@@ -308,7 +316,11 @@ class TaggedAttachmentsTest(DeviceTaggingBase):
             raise cls.skipException('Metadata API must be enabled')
 
     def verify_device_metadata(self, md_json):
-        md_dict = json.loads(md_json)
+        try:
+            md_dict = json.loads(md_json)
+        except (json_decoder.JSONDecodeError, TypeError):
+            return False
+
         found_devices = [d['tags'][0] for d in md_dict['devices']
                          if d.get('tags')]
         try:
@@ -356,8 +368,13 @@ class TaggedAttachmentsTest(DeviceTaggingBase):
             validation_resources=validation_resources,
             config_drive=config_drive_enabled,
             name=data_utils.rand_name('device-tagging-server'),
-            networks=[{'uuid': self.get_tenant_network()['id']}])
+            networks=[{'uuid': self.get_tenant_network()['id']}],
+            wait_until='ACTIVE')
         self.addCleanup(self.delete_server, server['id'])
+
+        # NOTE(mgoddard): Get detailed server to ensure addresses are present
+        # in fixed IP case.
+        server = self.servers_client.show_server(server['id'])['server']
 
         # Attach tagged nic and volume
         interface = self.interfaces_client.create_interface(

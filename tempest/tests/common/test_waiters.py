@@ -13,8 +13,9 @@
 #    under the License.
 
 import time
+from unittest import mock
 
-import mock
+from oslo_utils.fixture import uuidsentinel as uuids
 
 from tempest.common import waiters
 from tempest import exceptions
@@ -53,44 +54,6 @@ class TestImageWaiters(base.TestCase):
         self.assertRaises(exceptions.AddImageException,
                           waiters.wait_for_image_status,
                           self.client, 'fake_image_id', 'active')
-
-    @mock.patch.object(time, 'sleep')
-    def test_wait_for_volume_status_error_restoring(self, mock_sleep):
-        # Tests that the wait method raises VolumeRestoreErrorException if
-        # the volume status is 'error_restoring'.
-        client = mock.Mock(spec=volumes_client.VolumesClient,
-                           resource_type="volume",
-                           build_interval=1)
-        volume1 = {'volume': {'status': 'restoring-backup'}}
-        volume2 = {'volume': {'status': 'error_restoring'}}
-        mock_show = mock.Mock(side_effect=(volume1, volume2))
-        client.show_volume = mock_show
-        volume_id = '7532b91e-aa0a-4e06-b3e5-20c0c5ee1caa'
-        self.assertRaises(exceptions.VolumeRestoreErrorException,
-                          waiters.wait_for_volume_resource_status,
-                          client, volume_id, 'available')
-        mock_show.assert_has_calls([mock.call(volume_id),
-                                    mock.call(volume_id)])
-        mock_sleep.assert_called_once_with(1)
-
-    @mock.patch.object(time, 'sleep')
-    def test_wait_for_volume_status_error_extending(self, mock_sleep):
-        # Tests that the wait method raises VolumeExtendErrorException if
-        # the volume status is 'error_extending'.
-        client = mock.Mock(spec=volumes_client.VolumesClient,
-                           resource_type="volume",
-                           build_interval=1)
-        volume1 = {'volume': {'status': 'extending'}}
-        volume2 = {'volume': {'status': 'error_extending'}}
-        mock_show = mock.Mock(side_effect=(volume1, volume2))
-        client.show_volume = mock_show
-        volume_id = '7532b91e-aa0a-4e06-b3e5-20c0c5ee1caa'
-        self.assertRaises(exceptions.VolumeExtendErrorException,
-                          waiters.wait_for_volume_resource_status,
-                          client, volume_id, 'available')
-        mock_show.assert_has_calls([mock.call(volume_id),
-                                    mock.call(volume_id)])
-        mock_sleep.assert_called_once_with(1)
 
 
 class TestInterfaceWaiters(base.TestCase):
@@ -232,3 +195,89 @@ class TestVolumeWaiters(base.TestCase):
         show_volume.assert_has_calls([mock.call(mock.sentinel.volume_id),
                                       mock.call(mock.sentinel.volume_id),
                                       mock.call(mock.sentinel.volume_id)])
+
+    @mock.patch.object(time, 'sleep')
+    def test_wait_for_volume_status_error_restoring(self, mock_sleep):
+        # Tests that the wait method raises VolumeRestoreErrorException if
+        # the volume status is 'error_restoring'.
+        client = mock.Mock(spec=volumes_client.VolumesClient,
+                           resource_type="volume",
+                           build_interval=1)
+        volume1 = {'volume': {'status': 'restoring-backup'}}
+        volume2 = {'volume': {'status': 'error_restoring'}}
+        mock_show = mock.Mock(side_effect=(volume1, volume2))
+        client.show_volume = mock_show
+        volume_id = '7532b91e-aa0a-4e06-b3e5-20c0c5ee1caa'
+        self.assertRaises(exceptions.VolumeRestoreErrorException,
+                          waiters.wait_for_volume_resource_status,
+                          client, volume_id, 'available')
+        mock_show.assert_has_calls([mock.call(volume_id),
+                                    mock.call(volume_id)])
+        mock_sleep.assert_called_once_with(1)
+
+    @mock.patch.object(time, 'sleep')
+    def test_wait_for_volume_status_error_extending(self, mock_sleep):
+        # Tests that the wait method raises VolumeExtendErrorException if
+        # the volume status is 'error_extending'.
+        client = mock.Mock(spec=volumes_client.VolumesClient,
+                           resource_type="volume",
+                           build_interval=1)
+        volume1 = {'volume': {'status': 'extending'}}
+        volume2 = {'volume': {'status': 'error_extending'}}
+        mock_show = mock.Mock(side_effect=(volume1, volume2))
+        client.show_volume = mock_show
+        volume_id = '7532b91e-aa0a-4e06-b3e5-20c0c5ee1caa'
+        self.assertRaises(exceptions.VolumeExtendErrorException,
+                          waiters.wait_for_volume_resource_status,
+                          client, volume_id, 'available')
+        mock_show.assert_has_calls([mock.call(volume_id),
+                                    mock.call(volume_id)])
+        mock_sleep.assert_called_once_with(1)
+
+    def test_wait_for_volume_attachment(self):
+        vol_detached = {'volume': {'attachments': []}}
+        vol_attached = {'volume': {'attachments': [
+                       {'attachment_id': uuids.attachment_id}]}}
+        show_volume = mock.MagicMock(side_effect=[
+            vol_attached, vol_attached, vol_detached])
+        client = mock.Mock(spec=volumes_client.VolumesClient,
+                           build_interval=1,
+                           build_timeout=5,
+                           show_volume=show_volume)
+        self.patch('time.time')
+        self.patch('time.sleep')
+        waiters.wait_for_volume_attachment_remove(client, uuids.volume_id,
+                                                  uuids.attachment_id)
+        # Assert that show volume is called until the attachment is removed.
+        show_volume.assert_has_calls = [mock.call(uuids.volume_id),
+                                        mock.call(uuids.volume_id),
+                                        mock.call(uuids.volume_id)]
+
+    def test_wait_for_volume_attachment_timeout(self):
+        show_volume = mock.MagicMock(return_value={
+            'volume': {'attachments': [
+                {'attachment_id': uuids.attachment_id}]}})
+        client = mock.Mock(spec=volumes_client.VolumesClient,
+                           build_interval=1,
+                           build_timeout=1,
+                           show_volume=show_volume)
+        self.patch('time.time', side_effect=[0., client.build_timeout + 1.])
+        self.patch('time.sleep')
+        # Assert that a timeout is raised if the attachment remains.
+        self.assertRaises(lib_exc.TimeoutException,
+                          waiters.wait_for_volume_attachment_remove,
+                          client, uuids.volume_id, uuids.attachment_id)
+
+    def test_wait_for_volume_attachment_not_present(self):
+        show_volume = mock.MagicMock(return_value={
+            'volume': {'attachments': []}})
+        client = mock.Mock(spec=volumes_client.VolumesClient,
+                           build_interval=1,
+                           build_timeout=1,
+                           show_volume=show_volume)
+        self.patch('time.time', side_effect=[0., client.build_timeout + 1.])
+        self.patch('time.sleep')
+        waiters.wait_for_volume_attachment_remove(client, uuids.volume_id,
+                                                  uuids.attachment_id)
+        # Assert that show volume is only called once before we return
+        show_volume.assert_called_once_with(uuids.volume_id)

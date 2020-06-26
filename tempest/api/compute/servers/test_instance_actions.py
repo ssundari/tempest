@@ -19,6 +19,7 @@ from tempest.lib import decorators
 
 
 class InstanceActionsTestJSON(base.BaseV2ComputeTest):
+    create_default_network = True
 
     @classmethod
     def setup_clients(cls):
@@ -54,6 +55,7 @@ class InstanceActionsTestJSON(base.BaseV2ComputeTest):
 
 
 class InstanceActionsV221TestJSON(base.BaseV2ComputeTest):
+    create_default_network = True
 
     min_microversion = '2.21'
     max_microversion = 'latest'
