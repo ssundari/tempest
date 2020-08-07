@@ -62,8 +62,9 @@ class ExistsAllResponseHeaders(object):
         # [1] https://bugs.launchpad.net/swift/+bug/1537811
         # [2] http://tracker.ceph.com/issues/13582
         if ('content-length' not in actual and
+                'transfer-encoding' not in actual and
                 self._content_length_required(actual)):
-            return NonExistentHeader('content-length')
+            return NonExistentHeaders(['content-length', 'transfer-encoding'])
         if 'content-type' not in actual:
             return NonExistentHeader('content-type')
         if 'x-trans-id' not in actual:
@@ -75,8 +76,6 @@ class ExistsAllResponseHeaders(object):
         if self.method == 'GET' or self.method == 'HEAD':
             if 'x-timestamp' not in actual:
                 return NonExistentHeader('x-timestamp')
-            if 'accept-ranges' not in actual:
-                return NonExistentHeader('accept-ranges')
             if self.target == 'Account':
                 if 'x-account-bytes-used' not in actual:
                     return NonExistentHeader('x-account-bytes-used')
@@ -187,6 +186,19 @@ class NonExistentHeader(object):
 
     def describe(self):
         return "%s header does not exist" % self.header
+
+    def get_details(self):
+        return {}
+
+
+class NonExistentHeaders(object):
+    """Informs an error message in the case of missing certain headers"""
+
+    def __init__(self, headers):
+        self.headers = headers
+
+    def describe(self):
+        return "none of these headers exist: %s" % self.headers
 
     def get_details(self):
         return {}

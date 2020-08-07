@@ -18,23 +18,19 @@ from tempest.lib import decorators
 
 
 class VolumeHostsAdminTestsJSON(base.BaseVolumeAdminTest):
+    """Test fetching volume hosts info by admin users"""
 
     @decorators.idempotent_id('d5f3efa2-6684-4190-9ced-1c2f526352ad')
     def test_list_hosts(self):
+        """Test listing volume hosts"""
         hosts = self.admin_hosts_client.list_hosts()['hosts']
         self.assertGreaterEqual(len(hosts), 2,
                                 "The count of volume hosts is < 2, "
                                 "response of list hosts is: %s" % hosts)
 
-        # Check elements in volume hosts list
-        host_list_keys = ['service', 'host_name', 'last-update',
-                          'zone', 'service-status', 'service-state']
-        for host in hosts:
-            for key in host_list_keys:
-                self.assertIn(key, host)
-
     @decorators.idempotent_id('21168d57-b373-4b71-a3ac-f2c88f0c5d31')
     def test_show_host(self):
+        """Test getting volume host details"""
         hosts = self.admin_hosts_client.list_hosts()['hosts']
         self.assertGreaterEqual(len(hosts), 2,
                                 "The count of volume hosts is < 2, "
@@ -53,12 +49,6 @@ class VolumeHostsAdminTestsJSON(base.BaseVolumeAdminTest):
                             "all hosts that found are: %s" % hosts)
 
         # Check each cinder-volume host.
-        host_detail_keys = ['project', 'volume_count', 'snapshot_count',
-                            'host', 'total_volume_gb', 'total_snapshot_gb']
         for host in c_vol_hosts:
             host_details = self.admin_hosts_client.show_host(host)['host']
             self.assertNotEmpty(host_details)
-            for detail in host_details:
-                self.assertIn('resource', detail)
-                for key in host_detail_keys:
-                    self.assertIn(key, detail['resource'])

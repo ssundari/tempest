@@ -14,11 +14,17 @@
 #    under the License.
 
 from tempest.api.network import base
+from tempest.common import utils
+from tempest import config
+from tempest.lib.common.utils import data_utils
 from tempest.lib.common.utils import test_utils
 from tempest.lib import decorators
 
+CONF = config.CONF
+
 
 class PortsAdminExtendedAttrsTestJSON(base.BaseAdminNetworkTest):
+    """Test extended attributes of ports"""
 
     @classmethod
     def setup_clients(cls):
@@ -29,13 +35,17 @@ class PortsAdminExtendedAttrsTestJSON(base.BaseAdminNetworkTest):
     def resource_setup(cls):
         super(PortsAdminExtendedAttrsTestJSON, cls).resource_setup()
         cls.network = cls.create_network()
-        hyper_list = cls.hyper_client.list_hypervisors()
-        cls.host_id = hyper_list['hypervisors'][0]['hypervisor_hostname']
+        if CONF.service_available.nova:
+            hyper_list = cls.hyper_client.list_hypervisors()
+            cls.host_id = hyper_list['hypervisors'][0]['hypervisor_hostname']
 
     @decorators.idempotent_id('8e8569c1-9ac7-44db-8bc1-f5fb2814f29b')
+    @utils.services('compute')
     def test_create_port_binding_ext_attr(self):
+        """Test creating port with extended attribute"""
         post_body = {"network_id": self.network['id'],
-                     "binding:host_id": self.host_id}
+                     "binding:host_id": self.host_id,
+                     "name": data_utils.rand_name(self.__class__.__name__)}
         body = self.admin_ports_client.create_port(**post_body)
         port = body['port']
         self.addCleanup(
@@ -46,8 +56,11 @@ class PortsAdminExtendedAttrsTestJSON(base.BaseAdminNetworkTest):
         self.assertEqual(self.host_id, host_id)
 
     @decorators.idempotent_id('6f6c412c-711f-444d-8502-0ac30fbf5dd5')
+    @utils.services('compute')
     def test_update_port_binding_ext_attr(self):
-        post_body = {"network_id": self.network['id']}
+        """Test updating port's extended attribute"""
+        post_body = {"network_id": self.network['id'],
+                     "name": data_utils.rand_name(self.__class__.__name__)}
         body = self.admin_ports_client.create_port(**post_body)
         port = body['port']
         self.addCleanup(
@@ -61,9 +74,12 @@ class PortsAdminExtendedAttrsTestJSON(base.BaseAdminNetworkTest):
         self.assertEqual(self.host_id, host_id)
 
     @decorators.idempotent_id('1c82a44a-6c6e-48ff-89e1-abe7eaf8f9f8')
+    @utils.services('compute')
     def test_list_ports_binding_ext_attr(self):
+        """Test updating and listing port's extended attribute"""
         # Create a new port
-        post_body = {"network_id": self.network['id']}
+        post_body = {"network_id": self.network['id'],
+                     "name": data_utils.rand_name(self.__class__.__name__)}
         body = self.admin_ports_client.create_port(**post_body)
         port = body['port']
         self.addCleanup(
@@ -89,7 +105,9 @@ class PortsAdminExtendedAttrsTestJSON(base.BaseAdminNetworkTest):
 
     @decorators.idempotent_id('b54ac0ff-35fc-4c79-9ca3-c7dbd4ea4f13')
     def test_show_port_binding_ext_attr(self):
+        """Test showing port's extended attribute"""
         body = self.admin_ports_client.create_port(
+            name=data_utils.rand_name(self.__class__.__name__),
             network_id=self.network['id'])
         port = body['port']
         self.addCleanup(test_utils.call_and_ignore_notfound_exc,

@@ -251,6 +251,11 @@ class SSHExecCommandFailed(TempestException):
                "stdout:\n%(stdout)s")
 
 
+class SSHClientProxyClientLoop(TempestException):
+    message = ("SSH client proxy client has same host: %(host)s, port: "
+               "%(port)s and username: %(username)s as parent")
+
+
 class UnknownServiceClient(TempestException):
     message = "Service clients named %(services)s are not known"
 
@@ -280,3 +285,12 @@ class InvalidTestResource(TempestException):
 
 class InvalidParam(TempestException):
     message = ("Invalid Parameter passed: %(invalid_param)s")
+
+
+class ConsistencyGroupException(TempestException):
+    message = "Consistency group %(cg_id)s failed and is in ERROR status"
+
+
+class ConsistencyGroupSnapshotException(TempestException):
+    message = ("Consistency group snapshot %(cgsnapshot_id)s failed and is "
+               "in ERROR status")

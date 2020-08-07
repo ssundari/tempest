@@ -16,6 +16,7 @@ import testtools
 
 from tempest.api.network import base
 from tempest import config
+from tempest.lib.common.utils import data_utils
 from tempest.lib.common.utils import test_utils
 from tempest.lib import decorators
 from tempest.lib import exceptions as lib_exc
@@ -24,16 +25,19 @@ CONF = config.CONF
 
 
 class ExternalNetworksAdminNegativeTestJSON(base.BaseAdminNetworkTest):
+    """Negative tests of external network"""
 
     @decorators.attr(type=['negative'])
     @decorators.idempotent_id('d402ae6c-0be0-4d8e-833b-a738895d98d0')
     @testtools.skipUnless(CONF.network.public_network_id,
                           'The public_network_id option must be specified.')
     def test_create_port_with_precreated_floatingip_as_fixed_ip(self):
-        # NOTE: External networks can be used to create both floating-ip as
-        # well as instance-ip. So, creating an instance-ip with a value of a
-        # pre-created floating-ip should be denied.
+        """Test creating port with precreated floating ip as fixed ip
 
+        NOTE: External networks can be used to create both floating-ip as
+        well as instance-ip. So, creating an instance-ip with a value of a
+        pre-created floating-ip should be denied.
+        """
         # create a floating ip
         body = self.admin_floating_ips_client.create_floatingip(
             floating_network_id=CONF.network.public_network_id)
@@ -50,5 +54,6 @@ class ExternalNetworksAdminNegativeTestJSON(base.BaseAdminNetworkTest):
         # create a port which will internally create an instance-ip
         self.assertRaises(lib_exc.Conflict,
                           self.admin_ports_client.create_port,
+                          name=data_utils.rand_name(self.__class__.__name__),
                           network_id=CONF.network.public_network_id,
                           fixed_ips=fixed_ips)

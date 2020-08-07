@@ -67,7 +67,7 @@ class QuotasTest(base.BaseAdminNetworkTest):
         non_default_quotas = self.admin_quotas_client.list_quotas()
         found = False
         for qs in non_default_quotas['quotas']:
-            if qs['tenant_id'] == project_id:
+            if qs['project_id'] == project_id:
                 found = True
         self.assertTrue(found)
 
@@ -81,7 +81,7 @@ class QuotasTest(base.BaseAdminNetworkTest):
         self.admin_quotas_client.reset_quotas(project_id)
         non_default_quotas = self.admin_quotas_client.list_quotas()
         for q in non_default_quotas['quotas']:
-            self.assertNotEqual(project_id, q['tenant_id'])
+            self.assertNotEqual(project_id, q['project_id'])
         quota_set = self.admin_quotas_client.show_quotas(project_id)['quota']
         default_quotas = self.admin_quotas_client.show_default_quotas(
             project_id)['quota']
@@ -89,6 +89,7 @@ class QuotasTest(base.BaseAdminNetworkTest):
 
     @decorators.idempotent_id('2390f766-836d-40ef-9aeb-e810d78207fb')
     def test_quotas(self):
+        """Test update/list/show/reset of network quotas"""
         new_quotas = {'network': 0, 'port': 0}
         self._check_quotas(new_quotas)
 
@@ -96,6 +97,7 @@ class QuotasTest(base.BaseAdminNetworkTest):
         'quota_details', 'network'), 'Quota details extension not enabled.')
     @decorators.idempotent_id('7b05ec5f-bf44-43cb-b28f-ddd72a824288')
     def test_show_quota_details(self):
+        """Test showing network quota details"""
         # Show quota details for an existing project
         quota_details = self.admin_quotas_client.show_quota_details(
             self.admin_quotas_client.tenant_id)['quota']

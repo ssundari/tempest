@@ -1,5 +1,8 @@
 Run Tempest
 
+The result of the tempest run is stored in the `tempest_run_result`
+variable (through the `register` statement).
+
 **Role Variables**
 
 .. zuul:rolevar:: devstack_base_dir
@@ -20,14 +23,12 @@ Run Tempest
    It works only when used with some specific tox environments
    ('all', 'all-plugin'.)
 
-   Multi-line and commented regexs can be achieved by doing this:
+   In the following example only api scenario and third party tests
+   will be executed.
 
        ::
            vars:
-             tempest_test_regex: |
-               (?x)    # Ignore comments and whitespaces
-               # Line with only a comment.
-               (tempest\.(api|scenario|thirdparty)).*$    # Run only api scenario and third party
+             tempest_test_regex: (tempest\.(api|scenario|thirdparty)).*$
 
 .. zuul:rolevar:: tempest_test_blacklist
 
@@ -48,14 +49,9 @@ Run Tempest
    It works only when used with some specific tox environments
    ('all', 'all-plugin'.)
 
-   Multi-line and commented regexs can be achieved by doing this:
-
        ::
            vars:
-             tempest_black_regex: |
-               (?x)    # Ignore comments and whitespaces
-               # Line with only a comment.
-               (tempest.api.identity).*$
+             tempest_black_regex: (tempest.api.identity).*$
 
 .. zuul:rolevar:: tox_extra_args
    :default: ''
@@ -67,3 +63,21 @@ Run Tempest
        ::
            vars:
              tox_extra_args: --sitepackages
+
+.. zuul:rolevar:: tempest_test_timeout
+   :default: ''
+
+   The timeout (in seconds) for each test.
+
+.. zuul:rolevar:: stable_constraints_file
+   :default: ''
+
+   Upper constraints file to be used for stable branch till stable/rocky.
+
+.. zuul:rolevar:: tempest_tox_environment
+   :default: ''
+
+   Environment variable to set for run-tempst task.
+
+   Env variables set in this variable will be combined with some more
+   defaults env variable set at runtime.

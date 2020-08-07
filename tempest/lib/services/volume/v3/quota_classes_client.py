@@ -15,6 +15,7 @@
 
 from oslo_serialization import jsonutils as json
 
+from tempest.lib.api_schema.response.volume import quota_classes as schema
 from tempest.lib.common import rest_client
 
 
@@ -26,12 +27,12 @@ class QuotaClassesClient(rest_client.RestClient):
 
         For a full list of available parameters, please refer to the official
         API reference:
-        https://developer.openstack.org/api-ref/block-storage/v3/index.html#show-quota-classes-for-a-project
+        https://docs.openstack.org/api-ref/block-storage/v3/index.html#show-quota-classes-for-a-project
         """
         url = 'os-quota-class-sets/%s' % quota_class_id
         resp, body = self.get(url)
-        self.expected_success(200, resp.status)
         body = json.loads(body)
+        self.validate_response(schema.show_quota_classes, resp, body)
         return rest_client.ResponseBody(resp, body)
 
     def update_quota_class_set(self, quota_class_id, **kwargs):
@@ -39,11 +40,11 @@ class QuotaClassesClient(rest_client.RestClient):
 
         For a full list of available parameters, please refer to the official
         API reference:
-        https://developer.openstack.org/api-ref/block-storage/v3/index.html#update-quota-classes-for-a-project
+        https://docs.openstack.org/api-ref/block-storage/v3/index.html#update-quota-classes-for-a-project
         """
         url = 'os-quota-class-sets/%s' % quota_class_id
         put_body = json.dumps({'quota_class_set': kwargs})
         resp, body = self.put(url, put_body)
-        self.expected_success(200, resp.status)
         body = json.loads(body)
+        self.validate_response(schema.update_quota_classes, resp, body)
         return rest_client.ResponseBody(resp, body)

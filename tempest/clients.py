@@ -71,6 +71,7 @@ class Manager(clients.ServiceClients):
         self.tags_client = self.network.TagsClient()
         self.qos_client = self.network.QosClient()
         self.qos_min_bw_client = self.network.QosMinimumBandwidthRulesClient()
+        self.segments_client = self.network.SegmentsClient()
 
     def _set_image_clients(self):
         if CONF.service_available.glance:
@@ -262,6 +263,8 @@ class Manager(clients.ServiceClients):
                 self.volume_v3.MessagesClient())
             self.volume_versions_client_latest = (
                 self.volume_v3.VersionsClient())
+            self.attachments_client_latest = (
+                self.volume_v3.AttachmentsClient())
 
             # TODO(gmann): Below alias for service clients have been
             # deprecated and will be removed in future. Start using the alias

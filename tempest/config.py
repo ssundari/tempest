@@ -13,8 +13,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from __future__ import print_function
-
 import os
 import tempfile
 
@@ -390,7 +388,7 @@ PlacementGroup = [
                default='placement',
                help="Catalog type of the Placement service."),
     cfg.StrOpt('region',
-               default='RegionOne',
+               default='',
                help="The placement region name to use. If empty, the value "
                     "of [identity]/region is used instead. If no such region "
                     "is found in the service catalog, the first region found "
@@ -475,7 +473,14 @@ ComputeFeaturesGroup = [
                 default=False,
                 help="Does the test environment support block migration with "
                 "Cinder iSCSI volumes. Note: libvirt >= 1.2.17 is required "
-                "to support this if using the libvirt compute driver."),
+                "to support this if using the libvirt compute driver.",
+                deprecated_for_removal=True,
+                deprecated_reason='This option duplicates the more generic '
+                                  '[compute-feature-enabled]/block_migration '
+                                  '_for_live_migration now that '
+                                  'MIN_LIBVIRT_VERSION is >= 1.2.17 on all '
+                                  'branches from stable/rocky and will be '
+                                  'removed in a future release.'),
     cfg.BoolOpt('vnc_console',
                 default=False,
                 help='Enable VNC console. This configuration value should '
@@ -483,15 +488,28 @@ ComputeFeaturesGroup = [
     cfg.StrOpt('vnc_server_header',
                default='WebSockify',
                help='Expected VNC server name (WebSockify, nginx, etc) '
-                    'in response header.'),
+                    'in response header.',
+               deprecated_for_removal=True,
+               deprecated_reason='This option will be ignored because the '
+                                 'usage of different response header fields '
+                                 'to accomplish the same goal (in accordance '
+                                 'with RFC7231 S6.2.2) makes it obsolete.'),
     cfg.BoolOpt('spice_console',
                 default=False,
                 help='Enable Spice console. This configuration value should '
-                     'be same as nova.conf: spice.enabled'),
+                     'be same as nova.conf: spice.enabled',
+                deprecated_for_removal=True,
+                deprecated_reason="This config option is not being used "
+                                  "in Tempest, we can add it back when "
+                                  "adding the test cases."),
     cfg.BoolOpt('rdp_console',
                 default=False,
                 help='Enable RDP console. This configuration value should '
-                     'be same as nova.conf: rdp.enabled'),
+                     'be same as nova.conf: rdp.enabled',
+                deprecated_for_removal=True,
+                deprecated_reason="This config option is not being used "
+                                  "in Tempest, we can add it back when "
+                                  "adding the test cases."),
     cfg.BoolOpt('serial_console',
                 default=False,
                 help='Enable serial console. This configuration value '
@@ -501,6 +519,10 @@ ComputeFeaturesGroup = [
                 default=True,
                 help='Does the test environment support instance rescue '
                      'mode?'),
+    cfg.BoolOpt('stable_rescue',
+                default=False,
+                help='Does the test environment support stable device '
+                     'instance rescue mode?'),
     cfg.BoolOpt('enable_instance_password',
                 default=True,
                 help='Enables returning of the instance password by the '
@@ -634,6 +656,12 @@ ImageFeaturesGroup = [
                                   'are current one. In future, Tempest will '
                                   'test v2 APIs only so this config option '
                                   'will be removed.'),
+    # Image import feature is setup in devstack victoria onwards.
+    # Once all stable branches setup the same via glance standalone
+    # mode or with uwsgi, we can remove this config option.
+    cfg.BoolOpt('import_image',
+                default=False,
+                help="Is image import feature enabled"),
 ]
 
 network_group = cfg.OptGroup(name='network',
@@ -662,7 +690,7 @@ NetworkGroup = [
                default=28,
                help="The mask bits for project ipv4 subnets"),
     cfg.StrOpt('project_network_v6_cidr',
-               default="2003::/48",
+               default="2001:db8::/48",
                help="The cidr block to allocate project ipv6 subnets from"),
     cfg.IntOpt('project_network_v6_mask_bits',
                default=64,
@@ -679,6 +707,11 @@ NetworkGroup = [
     cfg.StrOpt('floating_network_name',
                help="Default floating network name. Used to allocate floating "
                     "IPs when neutron is enabled."),
+    cfg.StrOpt('subnet_id',
+               default="",
+               help="Subnet id of subnet which is used for allocation of "
+                    "floating IPs. Specify when two or more subnets are "
+                    "present in network."),
     cfg.StrOpt('public_router_id',
                default="",
                help="Id of the public router that provides external "
@@ -804,9 +837,10 @@ ValidationGroup = [
                help="User name used to authenticate to an instance."),
     cfg.StrOpt('image_ssh_password',
                default="password",
-               help="Password used to authenticate to an instance."),
+               help="Password used to authenticate to an instance.",
+               secret=True),
     cfg.StrOpt('ssh_shell_prologue',
-               default="set -eu -o pipefail; PATH=$$PATH:/sbin;",
+               default="set -eu -o pipefail; PATH=$$PATH:/sbin:/usr/sbin;",
                help="Shell fragments to use before executing a command "
                     "when sshing to a guest."),
     cfg.IntOpt('ping_size',
@@ -991,7 +1025,7 @@ ObjectStoreGroup = [
                help="Number of seconds to wait while looping to check the "
                     "status of a container to container synchronization"),
     cfg.StrOpt('operator_role',
-               default='Member',
+               default='member',
                help="Role to add to users created for swift tests to "
                     "enable creating containers"),
     cfg.StrOpt('reseller_admin_role',
@@ -1038,11 +1072,13 @@ ScenarioGroup = [
     cfg.StrOpt('img_dir',
                default='/opt/stack/new/devstack/files/images/'
                'cirros-0.3.1-x86_64-uec',
-               help='Directory containing image files',
+               help='Directory containing image files, this has been '
+                    'deprecated - img_file option contains a full path now.',
                deprecated_for_removal=True),
     cfg.StrOpt('img_file', deprecated_name='qcow2_img_file',
-               default='cirros-0.3.1-x86_64-disk.img',
-               help='Image file name'),
+               default='/opt/stack/new/devstack/files/images'
+               '/cirros-0.3.1-x86_64-disk.img',
+               help='Image full path.'),
     cfg.StrOpt('img_disk_format',
                default='qcow2',
                help='Image disk format'),
@@ -1051,18 +1087,6 @@ ScenarioGroup = [
                help='Image container format'),
     cfg.DictOpt('img_properties', help='Glance image properties. '
                 'Use for custom images which require them'),
-    cfg.StrOpt('ami_img_file',
-               default='cirros-0.3.1-x86_64-blank.img',
-               help='AMI image file name',
-               deprecated_for_removal=True),
-    cfg.StrOpt('ari_img_file',
-               default='cirros-0.3.1-x86_64-initrd',
-               help='ARI image file name',
-               deprecated_for_removal=True),
-    cfg.StrOpt('aki_img_file',
-               default='cirros-0.3.1-x86_64-vmlinuz',
-               help='AKI image file name',
-               deprecated_for_removal=True),
     # TODO(yfried): add support for dhcpcd
     cfg.StrOpt('dhcp_client',
                default='udhcpc',

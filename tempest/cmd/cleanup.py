@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-#
 # Copyright 2014 Dell Inc.
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
 # not use this file except in compliance with the License. You may obtain
@@ -72,6 +70,15 @@ Runtime Arguments
     deleted unless the ``--delete-tempest-conf-objects`` flag is used to
     force their deletion.
 
+.. note::
+
+    If during execution of ``tempest cleanup`` NotImplemented exception
+    occurres, ``tempest cleanup`` won't fail on that, it will be logged only.
+    NotImplemented errors are ignored because they are an outcome of some
+    extensions being disabled and ``tempest cleanup`` is not checking their
+    availability as it tries to clean up as much as possible without any
+    complicated logic.
+
 """
 import sys
 import traceback
@@ -85,6 +92,7 @@ from tempest.cmd import cleanup_service
 from tempest.common import credentials_factory as credentials
 from tempest.common import identity
 from tempest import config
+from tempest.lib import exceptions
 
 SAVED_STATE_JSON = "saved_state.json"
 DRY_RUN_JSON = "dry_run.json"
@@ -105,10 +113,26 @@ class TempestCleanup(command.Command):
             LOG.exception("Failure during cleanup")
             traceback.print_exc()
             raise
-        if self.GOT_EXCEPTIONS:
+        # ignore NotImplemented errors as those are an outcome of some
+        # extensions being disabled and cleanup is not checking their
+        # availability as it tries to clean up as much as possible without
+        # any complicated logic
+        critical_exceptions = [ex for ex in self.GOT_EXCEPTIONS if
+                               not isinstance(ex, exceptions.NotImplemented)]
+        if critical_exceptions:
             raise Exception(self.GOT_EXCEPTIONS)
 
     def init(self, parsed_args):
+        # set new handler for logging to stdout, by default only INFO messages
+        # are logged to stdout
+        stdout_handler = logging.logging.StreamHandler()
+        # debug argument is defined in cliff already
+        if self.app_args.debug:
+            stdout_handler.level = logging.DEBUG
+        else:
+            stdout_handler.level = logging.INFO
+        LOG.handlers.append(stdout_handler)
+
         cleanup_service.init_conf()
         self.options = parsed_args
         self.admin_mgr = clients.Manager(
@@ -121,10 +145,11 @@ class TempestCleanup(command.Command):
         self.admin_project_id = ""
         self._init_admin_ids()
 
-        self.admin_role_added = []
-
         # available services
-        self.project_services = cleanup_service.get_project_cleanup_services()
+        self.project_associated_services = (
+            cleanup_service.get_project_associated_cleanup_services())
+        self.resource_cleanup_services = (
+            cleanup_service.get_resource_cleanup_services())
         self.global_services = cleanup_service.get_global_cleanup_services()
 
         if parsed_args.init_saved_state:
@@ -134,7 +159,7 @@ class TempestCleanup(command.Command):
         self._load_json()
 
     def _cleanup(self):
-        print("Begin cleanup")
+        LOG.info("Begin cleanup")
         is_dry_run = self.options.dry_run
         is_preserve = not self.options.delete_tempest_conf_objects
         is_save_state = False
@@ -152,11 +177,10 @@ class TempestCleanup(command.Command):
                   'is_save_state': is_save_state}
         project_service = cleanup_service.ProjectService(admin_mgr, **kwargs)
         projects = project_service.list()
-        print("Process %s projects" % len(projects))
+        LOG.info("Processing %s projects", len(projects))
 
         # Loop through list of projects and clean them up.
         for project in projects:
-            self._add_admin(project['id'])
             self._clean_project(project)
 
         kwargs = {'data': self.dry_run_data,
@@ -165,8 +189,14 @@ class TempestCleanup(command.Command):
                   'is_preserve': is_preserve,
                   'is_save_state': is_save_state,
                   'got_exceptions': self.GOT_EXCEPTIONS}
+        LOG.info("Processing global services")
         for service in self.global_services:
             svc = service(admin_mgr, **kwargs)
+            svc.run()
+
+        LOG.info("Processing services")
+        for service in self.resource_cleanup_services:
+            svc = service(self.admin_mgr, **kwargs)
             svc.run()
 
         if is_dry_run:
@@ -174,17 +204,8 @@ class TempestCleanup(command.Command):
                 f.write(json.dumps(self.dry_run_data, sort_keys=True,
                                    indent=2, separators=(',', ': ')))
 
-        self._remove_admin_user_roles()
-
-    def _remove_admin_user_roles(self):
-        project_ids = self.admin_role_added
-        LOG.debug("Removing admin user roles where needed for projects: %s",
-                  project_ids)
-        for project_id in project_ids:
-            self._remove_admin_role(project_id)
-
     def _clean_project(self, project):
-        print("Cleaning project:  %s " % project['name'])
+        LOG.debug("Cleaning project:  %s ", project['name'])
         is_dry_run = self.options.dry_run
         dry_run_data = self.dry_run_data
         is_preserve = not self.options.delete_tempest_conf_objects
@@ -195,11 +216,6 @@ class TempestCleanup(command.Command):
             project_data = dry_run_data["_projects_to_clean"][project_id] = {}
             project_data['name'] = project_name
 
-        kwargs = {"username": CONF.auth.admin_username,
-                  "password": CONF.auth.admin_password,
-                  "project_name": project['name']}
-        mgr = clients.Manager(credentials=credentials.get_credentials(
-            **kwargs))
         kwargs = {'data': project_data,
                   'is_dry_run': is_dry_run,
                   'saved_state_json': self.json_data,
@@ -207,8 +223,8 @@ class TempestCleanup(command.Command):
                   'is_save_state': False,
                   'project_id': project_id,
                   'got_exceptions': self.GOT_EXCEPTIONS}
-        for service in self.project_services:
-            svc = service(mgr, **kwargs)
+        for service in self.project_associated_services:
+            svc = service(self.admin_mgr, **kwargs)
             svc.run()
 
     def _init_admin_ids(self):
@@ -258,48 +274,8 @@ class TempestCleanup(command.Command):
     def get_description(self):
         return 'Cleanup after tempest run'
 
-    def _add_admin(self, project_id):
-        rl_cl = self.admin_mgr.roles_v3_client
-        needs_role = True
-        roles = rl_cl.list_user_roles_on_project(project_id,
-                                                 self.admin_id)['roles']
-        for role in roles:
-            if role['id'] == self.admin_role_id:
-                needs_role = False
-                LOG.debug("User already had admin privilege for this project")
-        if needs_role:
-            LOG.debug("Adding admin privilege for : %s", project_id)
-            rl_cl.create_user_role_on_project(project_id, self.admin_id,
-                                              self.admin_role_id)
-            self.admin_role_added.append(project_id)
-
-    def _remove_admin_role(self, project_id):
-        LOG.debug("Remove admin user role for projectt: %s", project_id)
-        # Must initialize Admin Manager for each user role
-        # Otherwise authentication exception is thrown, weird
-        id_cl = clients.Manager(
-            credentials.get_configured_admin_credentials()).identity_client
-        if (self._project_exists(project_id)):
-            try:
-                id_cl.delete_role_from_user_on_project(project_id,
-                                                       self.admin_id,
-                                                       self.admin_role_id)
-            except Exception as ex:
-                LOG.exception("Failed removing role from project which still "
-                              "exists, exception: %s", ex)
-
-    def _project_exists(self, project_id):
-        pr_cl = self.admin_mgr.projects_client
-        try:
-            p = pr_cl.show_project(project_id)
-            LOG.debug("Project is: %s", str(p))
-            return True
-        except Exception as ex:
-            LOG.debug("Project no longer exists? %s", ex)
-            return False
-
     def _init_state(self):
-        print("Initializing saved state.")
+        LOG.info("Initializing saved state.")
         data = {}
         admin_mgr = self.admin_mgr
         kwargs = {'data': data,
@@ -312,7 +288,11 @@ class TempestCleanup(command.Command):
             svc = service(admin_mgr, **kwargs)
             svc.run()
 
-        for service in self.project_services:
+        for service in self.project_associated_services:
+            svc = service(admin_mgr, **kwargs)
+            svc.run()
+
+        for service in self.resource_cleanup_services:
             svc = service(admin_mgr, **kwargs)
             svc.run()
 

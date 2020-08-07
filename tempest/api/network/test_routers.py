@@ -27,6 +27,7 @@ CONF = config.CONF
 
 
 class RoutersTest(base.BaseNetworkTest):
+    """Test routers"""
 
     def _add_router_interface_with_subnet_id(self, router_id, subnet_id):
         interface = self.routers_client.add_router_interface(
@@ -53,6 +54,7 @@ class RoutersTest(base.BaseNetworkTest):
     @testtools.skipUnless(CONF.network.public_network_id,
                           'The public_network_id option must be specified.')
     def test_create_show_list_update_delete_router(self):
+        """Test create/show/list/update/delete of a router"""
         # Create a router
         router_name = data_utils.rand_name(self.__class__.__name__ + '-router')
         router = self.create_router(
@@ -87,6 +89,7 @@ class RoutersTest(base.BaseNetworkTest):
     @decorators.attr(type='smoke')
     @decorators.idempotent_id('b42e6e39-2e37-49cc-a6f4-8467e940900a')
     def test_add_remove_router_interface_with_subnet_id(self):
+        """Test adding and removing router interface with subnet id"""
         network_name = data_utils.rand_name(self.__class__.__name__)
         network = self.networks_client.create_network(
             name=network_name)['network']
@@ -113,6 +116,7 @@ class RoutersTest(base.BaseNetworkTest):
     @decorators.attr(type='smoke')
     @decorators.idempotent_id('2b7d2f37-6748-4d78-92e5-1d590234f0d5')
     def test_add_remove_router_interface_with_port_id(self):
+        """Test adding and removing router interface with port id"""
         network_name = data_utils.rand_name(self.__class__.__name__)
         network = self.networks_client.create_network(
             name=network_name)['network']
@@ -123,7 +127,8 @@ class RoutersTest(base.BaseNetworkTest):
         router = self.create_router()
         self.addCleanup(self.delete_router, router)
         port_body = self.ports_client.create_port(
-            network_id=network['id'])
+            network_id=network['id'],
+            name=data_utils.rand_name(self.__class__.__name__))
         # add router interface to port created above
         interface = self.routers_client.add_router_interface(
             router['id'],
@@ -141,41 +146,10 @@ class RoutersTest(base.BaseNetworkTest):
         self.routers_client.remove_router_interface(
             router['id'], port_id=port_body['port']['id'])
 
-    @decorators.idempotent_id('cbe42f84-04c2-11e7-8adb-fa163e4fa634')
-    @utils.requires_ext(extension='ext-gw-mode', service='network')
-    @testtools.skipUnless(CONF.network.public_network_id,
-                          'The public_network_id option must be specified.')
-    @decorators.skip_because(bug='1676207')
-    def test_create_router_set_gateway_with_fixed_ip(self):
-        # Don't know public_network_address, so at first create address
-        # from public_network and delete
-        port = self.admin_ports_client.create_port(
-            network_id=CONF.network.public_network_id)['port']
-        self.admin_ports_client.delete_port(port_id=port['id'])
-
-        fixed_ip = {
-            'subnet_id': port['fixed_ips'][0]['subnet_id'],
-            'ip_address': port['fixed_ips'][0]['ip_address']
-        }
-        external_gateway_info = {
-            'network_id': CONF.network.public_network_id,
-            'external_fixed_ips': [fixed_ip]
-        }
-
-        # Create a router and set gateway to fixed_ip
-        router = self.admin_routers_client.create_router(
-            external_gateway_info=external_gateway_info)['router']
-        self.addCleanup(test_utils.call_and_ignore_notfound_exc,
-                        self.admin_routers_client.delete_router,
-                        router_id=router['id'])
-        # Examine router's gateway is equal to fixed_ip
-        self.assertEqual(router['external_gateway_info'][
-                         'external_fixed_ips'][0]['ip_address'],
-                         fixed_ip['ip_address'])
-
     @decorators.idempotent_id('c86ac3a8-50bd-4b00-a6b8-62af84a0765c')
     @utils.requires_ext(extension='extraroute', service='network')
     def test_update_delete_extra_route(self):
+        """Test updating and deleting router with extra route"""
         # Create different cidr for each subnet to avoid cidr duplicate
         # The cidr starts from project_cidr
         next_cidr = self.cidr
@@ -246,6 +220,7 @@ class RoutersTest(base.BaseNetworkTest):
 
     @decorators.idempotent_id('a8902683-c788-4246-95c7-ad9c6d63a4d9')
     def test_update_router_admin_state(self):
+        """Test updating router's admin state"""
         router = self.create_router()
         self.addCleanup(self.delete_router, router)
         self.assertFalse(router['admin_state_up'])
@@ -259,6 +234,7 @@ class RoutersTest(base.BaseNetworkTest):
     @decorators.attr(type='smoke')
     @decorators.idempotent_id('802c73c9-c937-4cef-824b-2191e24a6aab')
     def test_add_multiple_router_interfaces(self):
+        """Test adding multiple router interfaces"""
         network_name = data_utils.rand_name(self.__class__.__name__)
         network01 = self.networks_client.create_network(
             name=network_name)['network']
@@ -289,6 +265,7 @@ class RoutersTest(base.BaseNetworkTest):
 
     @decorators.idempotent_id('96522edf-b4b5-45d9-8443-fa11c26e6eff')
     def test_router_interface_port_update_with_fixed_ip(self):
+        """Test updating router interface port's fixed ip"""
         network_name = data_utils.rand_name(self.__class__.__name__)
         network = self.networks_client.create_network(
             name=network_name)['network']

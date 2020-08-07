@@ -12,8 +12,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from unittest import mock
+
 import fixtures
-import mock
 from oslo_config import cfg
 
 from tempest.cmd import account_generator
@@ -28,7 +29,6 @@ class FakeOpts(object):
         self.os_username = 'fake_user'
         self.os_password = 'fake_password'
         self.os_project_name = 'fake_project_name'
-        self.os_tenant_name = None
         self.os_domain_name = 'fake_domain'
         self.tag = 'fake'
         self.concurrency = 2
@@ -99,15 +99,6 @@ class TestAccountGeneratorV2(base.TestCase, MockHelpersMixin):
         self.assertEqual(self.opts.os_project_name, admin_creds.tenant_name)
         self.assertEqual(self.opts.os_password, admin_creds.password)
         self.assertFalse(hasattr(admin_creds, 'domain_name'))
-
-    def test_get_credential_provider_with_tenant(self):
-        self.opts.os_project_name = None
-        self.opts.os_tenant_name = 'fake_tenant'
-        cp = account_generator.get_credential_provider(self.opts)
-        admin_creds = cp.default_admin_creds
-        self.assertEqual(self.opts.os_tenant_name, admin_creds.tenant_name)
-        self.assertEqual(self.opts.os_username, admin_creds.username)
-        self.assertEqual(self.opts.os_password, admin_creds.password)
 
 
 class TestAccountGeneratorV3(TestAccountGeneratorV2):
@@ -346,3 +337,24 @@ class TestDumpAccountsV3(TestDumpAccountsV2):
     def setUp(self):
         self.mock_domains()
         super(TestDumpAccountsV3, self).setUp()
+
+
+class TestAccountGeneratorCliCheck(base.TestCase):
+
+    def setUp(self):
+        super(TestAccountGeneratorCliCheck, self).setUp()
+        self.account_generator = account_generator.TempestAccountGenerator(
+            app=mock.Mock(), app_args=mock.Mock())
+        self.parser = self.account_generator.get_parser("generator")
+
+    def test_account_generator_zero_concurrency(self):
+        error = self.assertRaises(
+            SystemExit, lambda: self.parser.parse_args(
+                ['-r', '0', 'accounts_file.yaml']))
+        self.assertTrue(error.code != 0)
+
+    def test_account_generator_negative_concurrency(self):
+        error = self.assertRaises(
+            SystemExit, lambda: self.parser.parse_args(
+                ['-r', '-1', 'accounts_file.yaml']))
+        self.assertTrue(error.code != 0)

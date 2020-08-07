@@ -53,17 +53,18 @@ class QuotasNegativeTest(base.BaseAdminNetworkTest):
     @decorators.attr(type=['negative'])
     @decorators.idempotent_id('644f4e1b-1bf9-4af0-9fd8-eb56ac0f51cf')
     def test_network_quota_exceeding(self):
+        """Test creating network when exceeding network quota will fail"""
         # Set the network quota to two
         self.admin_quotas_client.update_quotas(self.project['id'], network=2)
 
         # Create two networks
         n1 = self.admin_networks_client.create_network(
-            tenant_id=self.project['id'])
+            project_id=self.project['id'])
         self.addCleanup(test_utils.call_and_ignore_notfound_exc,
                         self.admin_networks_client.delete_network,
                         n1['network']['id'])
         n2 = self.admin_networks_client.create_network(
-            tenant_id=self.project['id'])
+            project_id=self.project['id'])
         self.addCleanup(test_utils.call_and_ignore_notfound_exc,
                         self.admin_networks_client.delete_network,
                         n2['network']['id'])
@@ -73,7 +74,7 @@ class QuotasNegativeTest(base.BaseAdminNetworkTest):
                 lib_exc.Conflict,
                 r"Quota exceeded for resources: \['network'\].*"):
             n3 = self.admin_networks_client.create_network(
-                tenant_id=self.project['id'])
+                project_id=self.project['id'])
             self.addCleanup(test_utils.call_and_ignore_notfound_exc,
                             self.admin_networks_client.delete_network,
                             n3['network']['id'])

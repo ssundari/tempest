@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 # Copyright 2015 Dell Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -15,6 +13,7 @@
 #    under the License.
 
 from oslo_log import log as logging
+from six.moves.urllib import parse as urllib
 
 from tempest import clients
 from tempest.common import credentials_factory as credentials
@@ -24,7 +23,7 @@ from tempest.common.utils import net_info
 from tempest import config
 from tempest.lib import exceptions
 
-LOG = logging.getLogger(__name__)
+LOG = logging.getLogger('tempest.cmd.cleanup')
 CONF = config.CONF
 
 CONF_FLAVORS = None
@@ -144,7 +143,7 @@ class BaseService(object):
             msg = ("Got NotImplemented error in %s, full exception: %s" %
                    (str(self.__class__), str(exc)))
             LOG.exception(msg)
-            self.got_exceptions.append(msg)
+            self.got_exceptions.append(exc)
 
 
 class SnapshotService(BaseService):
@@ -168,6 +167,7 @@ class SnapshotService(BaseService):
         client = self.client
         for snap in snaps:
             try:
+                LOG.debug("Deleting Snapshot with id %s", snap['id'])
                 client.delete_snapshot(snap['id'])
             except Exception:
                 LOG.exception("Delete Snapshot %s exception.", snap['id'])
@@ -205,6 +205,7 @@ class ServerService(BaseService):
         servers = self.list()
         for server in servers:
             try:
+                LOG.debug("Deleting Server with id %s", server['id'])
                 client.delete_server(server['id'])
             except Exception:
                 LOG.exception("Delete Server %s exception.", server['id'])
@@ -237,6 +238,7 @@ class ServerGroupService(ServerService):
         sgs = self.list()
         for sg in sgs:
             try:
+                LOG.debug("Deleting Server Group with id %s", sg['id'])
                 client.delete_server_group(sg['id'])
             except Exception:
                 LOG.exception("Delete Server Group %s exception.", sg['id'])
@@ -274,6 +276,7 @@ class KeyPairService(BaseService):
         for k in keypairs:
             name = k['keypair']['name']
             try:
+                LOG.debug("Deleting keypair %s", name)
                 client.delete_keypair(name)
             except Exception:
                 LOG.exception("Delete Keypair %s exception.", name)
@@ -310,6 +313,7 @@ class VolumeService(BaseService):
         vols = self.list()
         for v in vols:
             try:
+                LOG.debug("Deleting volume with id %s", v['id'])
                 client.delete_volume(v['id'])
             except Exception:
                 LOG.exception("Delete Volume %s exception.", v['id'])
@@ -333,6 +337,8 @@ class VolumeQuotaService(BaseService):
     def delete(self):
         client = self.client
         try:
+            LOG.debug("Deleting Volume Quotas for project with id %s",
+                      self.project_id)
             client.delete_quota_set(self.project_id)
         except Exception:
             LOG.exception("Delete Volume Quotas exception for 'project %s'.",
@@ -353,15 +359,38 @@ class NovaQuotaService(BaseService):
     def delete(self):
         client = self.client
         try:
+            LOG.debug("Deleting Nova Quotas for project with id %s",
+                      self.project_id)
             client.delete_quota_set(self.project_id)
         except Exception:
-            LOG.exception("Delete Quotas exception for 'project %s'.",
+            LOG.exception("Delete Nova Quotas exception for 'project %s'.",
                           self.project_id)
 
     def dry_run(self):
         client = self.limits_client
         quotas = client.show_limits()['limits']
         self.data['compute_quotas'] = quotas['absolute']
+
+
+class NetworkQuotaService(BaseService):
+    def __init__(self, manager, **kwargs):
+        super(NetworkQuotaService, self).__init__(kwargs)
+        self.client = manager.network_quotas_client
+
+    def delete(self):
+        client = self.client
+        try:
+            LOG.debug("Deleting Network Quotas for project with id %s",
+                      self.project_id)
+            client.reset_quotas(self.project_id)
+        except Exception:
+            LOG.exception("Delete Network Quotas exception for 'project %s'.",
+                          self.project_id)
+
+    def dry_run(self):
+        resp = [quota for quota in self.client.list_quotas()['quotas']
+                if quota['project_id'] == self.project_id]
+        self.data['network_quotas'] = resp
 
 
 # Begin network service classes
@@ -401,7 +430,7 @@ class NetworkService(BaseNetworkService):
         if self.is_preserve:
             networks = [network for network in networks
                         if network['id'] not in CONF_NETWORKS]
-        LOG.debug("List count, %s Networks", networks)
+        LOG.debug("List count, %s Networks", len(networks))
         return networks
 
     def delete(self):
@@ -409,6 +438,7 @@ class NetworkService(BaseNetworkService):
         networks = self.list()
         for n in networks:
             try:
+                LOG.debug("Deleting Network with id %s", n['id'])
                 client.delete_network(n['id'])
             except Exception:
                 LOG.exception("Delete Network %s exception.", n['id'])
@@ -443,6 +473,8 @@ class NetworkFloatingIpService(BaseNetworkService):
         flips = self.list()
         for flip in flips:
             try:
+                LOG.debug("Deleting Network Floating IP with id %s",
+                          flip['id'])
                 client.delete_floatingip(flip['id'])
             except Exception:
                 LOG.exception("Delete Network Floating IP %s exception.",
@@ -488,11 +520,14 @@ class NetworkRouterService(BaseNetworkService):
                      if net_info.is_router_interface_port(port)]
             for port in ports:
                 try:
+                    LOG.debug("Deleting port with id %s of router with id %s",
+                              port['id'], rid)
                     client.remove_router_interface(rid, port_id=port['id'])
                 except Exception:
                     LOG.exception("Delete Router Interface exception for "
                                   "'port %s' of 'router %s'.", port['id'], rid)
             try:
+                LOG.debug("Deleting Router with id %s", rid)
                 client.delete_router(rid)
             except Exception:
                 LOG.exception("Delete Router %s exception.", rid)
@@ -528,6 +563,8 @@ class NetworkMeteringLabelRuleService(NetworkService):
         rules = self.list()
         for rule in rules:
             try:
+                LOG.debug("Deleting Metering Label Rule with id %s",
+                          rule['id'])
                 client.delete_metering_label_rule(rule['id'])
             except Exception:
                 LOG.exception("Delete Metering Label Rule %s exception.",
@@ -564,6 +601,7 @@ class NetworkMeteringLabelService(BaseNetworkService):
         labels = self.list()
         for label in labels:
             try:
+                LOG.debug("Deleting Metering Label with id %s", label['id'])
                 client.delete_metering_label(label['id'])
             except Exception:
                 LOG.exception("Delete Metering Label %s exception.",
@@ -604,6 +642,7 @@ class NetworkPortService(BaseNetworkService):
         ports = self.list()
         for port in ports:
             try:
+                LOG.debug("Deleting port with id %s", port['id'])
                 client.delete_port(port['id'])
             except Exception:
                 LOG.exception("Delete Port %s exception.", port['id'])
@@ -645,6 +684,7 @@ class NetworkSecGroupService(BaseNetworkService):
         secgroups = self.list()
         for secgroup in secgroups:
             try:
+                LOG.debug("Deleting security_group with id %s", secgroup['id'])
                 client.delete_security_group(secgroup['id'])
             except Exception:
                 LOG.exception("Delete security_group %s exception.",
@@ -681,6 +721,7 @@ class NetworkSubnetService(BaseNetworkService):
         subnets = self.list()
         for subnet in subnets:
             try:
+                LOG.debug("Deleting subnet with id %s", subnet['id'])
                 client.delete_subnet(subnet['id'])
             except Exception:
                 LOG.exception("Delete Subnet %s exception.", subnet['id'])
@@ -716,6 +757,7 @@ class NetworkSubnetPoolsService(BaseNetworkService):
         pools = self.list()
         for pool in pools:
             try:
+                LOG.debug("Deleting Subnet Pool with id %s", pool['id'])
                 client.delete_subnetpool(pool['id'])
             except Exception:
                 LOG.exception("Delete Subnet Pool %s exception.", pool['id'])
@@ -732,6 +774,47 @@ class NetworkSubnetPoolsService(BaseNetworkService):
 
 
 # begin global services
+class RegionService(BaseService):
+
+    def __init__(self, manager, **kwargs):
+        super(RegionService, self).__init__(kwargs)
+        self.client = manager.regions_client
+
+    def list(self):
+        client = self.client
+        regions = client.list_regions()
+        if not self.is_save_state:
+            regions = [region for region in regions['regions'] if region['id']
+                       not in self.saved_state_json['regions'].keys()]
+            LOG.debug("List count, %s Regions", len(regions))
+            return regions
+        else:
+            LOG.debug("List count, %s Regions", len(regions['regions']))
+            return regions['regions']
+
+    def delete(self):
+        client = self.client
+        regions = self.list()
+        for region in regions:
+            try:
+                LOG.debug("Deleting region with id %s", region['id'])
+                client.delete_region(region['id'])
+            except Exception:
+                LOG.exception("Delete Region %s exception.", region['id'])
+
+    def dry_run(self):
+        regions = self.list()
+        self.data['regions'] = {}
+        for region in regions:
+            self.data['regions'][region['id']] = region
+
+    def save_state(self):
+        regions = self.list()
+        self.data['regions'] = {}
+        for region in regions:
+            self.data['regions'][region['id']] = region
+
+
 class FlavorService(BaseService):
     def __init__(self, manager, **kwargs):
         super(FlavorService, self).__init__(kwargs)
@@ -756,6 +839,7 @@ class FlavorService(BaseService):
         flavors = self.list()
         for flavor in flavors:
             try:
+                LOG.debug("Deleting flavor with id %s", flavor['id'])
                 client.delete_flavor(flavor['id'])
             except Exception:
                 LOG.exception("Delete Flavor %s exception.", flavor['id'])
@@ -778,7 +862,15 @@ class ImageService(BaseService):
 
     def list(self):
         client = self.client
-        images = client.list_images(params={"all_tenants": True})['images']
+        response = client.list_images()
+        images = []
+        images.extend(response['images'])
+        while 'next' in response:
+            parsed = urllib.urlparse(response['next'])
+            marker = urllib.parse_qs(parsed.query)['marker'][0]
+            response = client.list_images(params={"marker": marker})
+            images.extend(response['images'])
+
         if not self.is_save_state:
             images = [image for image in images if image['id']
                       not in self.saved_state_json['images'].keys()]
@@ -793,6 +885,7 @@ class ImageService(BaseService):
         images = self.list()
         for image in images:
             try:
+                LOG.debug("Deleting image with id %s", image['id'])
                 client.delete_image(image['id'])
             except Exception:
                 LOG.exception("Delete Image %s exception.", image['id'])
@@ -836,6 +929,7 @@ class UserService(BaseService):
         users = self.list()
         for user in users:
             try:
+                LOG.debug("Deleting user with id %s", user['id'])
                 self.client.delete_user(user['id'])
             except Exception:
                 LOG.exception("Delete User %s exception.", user['id'])
@@ -855,7 +949,7 @@ class RoleService(BaseService):
 
     def __init__(self, manager, **kwargs):
         super(RoleService, self).__init__(kwargs)
-        self.client = manager.roles_client
+        self.client = manager.roles_v3_client
 
     def list(self):
         try:
@@ -876,6 +970,7 @@ class RoleService(BaseService):
         roles = self.list()
         for role in roles:
             try:
+                LOG.debug("Deleting role with id %s", role['id'])
                 self.client.delete_role(role['id'])
             except Exception:
                 LOG.exception("Delete Role %s exception.", role['id'])
@@ -918,6 +1013,7 @@ class ProjectService(BaseService):
         projects = self.list()
         for project in projects:
             try:
+                LOG.debug("Deleting project with id %s", project['id'])
                 self.client.delete_project(project['id'])
             except Exception:
                 LOG.exception("Delete project %s exception.", project['id'])
@@ -954,6 +1050,7 @@ class DomainService(BaseService):
         domains = self.list()
         for domain in domains:
             try:
+                LOG.debug("Deleting domain with id %s", domain['id'])
                 client.update_domain(domain['id'], enabled=False)
                 client.delete_domain(domain['id'])
             except Exception:
@@ -970,31 +1067,54 @@ class DomainService(BaseService):
             self.data['domains'][domain['id']] = domain['name']
 
 
-def get_project_cleanup_services():
-    project_services = []
+def get_project_associated_cleanup_services():
+    """Returns list of project service classes.
+
+    The list contains services whose resources need to be deleted prior,
+    the project they are associated with, deletion. The resources cannot be
+    most likely deleted after the project is deleted first.
+    """
+    project_associated_services = []
     # TODO(gmann): Tempest should provide some plugin hook for cleanup
     # script extension to plugin tests also.
     if IS_NOVA:
-        project_services.append(ServerService)
-        project_services.append(KeyPairService)
-        project_services.append(ServerGroupService)
-        project_services.append(NovaQuotaService)
-    if IS_NEUTRON:
-        project_services.append(NetworkFloatingIpService)
-        if utils.is_extension_enabled('metering', 'network'):
-            project_services.append(NetworkMeteringLabelRuleService)
-            project_services.append(NetworkMeteringLabelService)
-        project_services.append(NetworkRouterService)
-        project_services.append(NetworkPortService)
-        project_services.append(NetworkSubnetService)
-        project_services.append(NetworkService)
-        project_services.append(NetworkSecGroupService)
-        project_services.append(NetworkSubnetPoolsService)
+        project_associated_services.append(NovaQuotaService)
     if IS_CINDER:
-        project_services.append(SnapshotService)
-        project_services.append(VolumeService)
-        project_services.append(VolumeQuotaService)
-    return project_services
+        project_associated_services.append(VolumeQuotaService)
+    if IS_NEUTRON:
+        project_associated_services.append(NetworkQuotaService)
+    return project_associated_services
+
+
+def get_resource_cleanup_services():
+    """Returns list of project related classes.
+
+    The list contains services whose resources are associated with a project,
+    however, their deletion is possible also after the project is deleted
+    first.
+    """
+    resource_cleanup_services = []
+    # TODO(gmann): Tempest should provide some plugin hook for cleanup
+    # script extension to plugin tests also.
+    if IS_NOVA:
+        resource_cleanup_services.append(ServerService)
+        resource_cleanup_services.append(KeyPairService)
+        resource_cleanup_services.append(ServerGroupService)
+    if IS_NEUTRON:
+        resource_cleanup_services.append(NetworkFloatingIpService)
+        if utils.is_extension_enabled('metering', 'network'):
+            resource_cleanup_services.append(NetworkMeteringLabelRuleService)
+            resource_cleanup_services.append(NetworkMeteringLabelService)
+        resource_cleanup_services.append(NetworkRouterService)
+        resource_cleanup_services.append(NetworkPortService)
+        resource_cleanup_services.append(NetworkSubnetService)
+        resource_cleanup_services.append(NetworkService)
+        resource_cleanup_services.append(NetworkSecGroupService)
+        resource_cleanup_services.append(NetworkSubnetPoolsService)
+    if IS_CINDER:
+        resource_cleanup_services.append(SnapshotService)
+        resource_cleanup_services.append(VolumeService)
+    return resource_cleanup_services
 
 
 def get_global_cleanup_services():
@@ -1007,4 +1127,5 @@ def get_global_cleanup_services():
     global_services.append(ProjectService)
     global_services.append(DomainService)
     global_services.append(RoleService)
+    global_services.append(RegionService)
     return global_services

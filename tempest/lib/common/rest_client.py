@@ -21,6 +21,7 @@ import time
 
 import jsonschema
 from oslo_log import log as logging
+from oslo_log import versionutils
 from oslo_serialization import jsonutils as json
 import six
 from six.moves import urllib
@@ -177,13 +178,27 @@ class RestClient(object):
         return self.auth_provider.credentials.tenant_name
 
     @property
+    def project_id(self):
+        """The project id being used for requests
+
+        :rtype: string
+        :return: The project id being used for requests
+        """
+        return self.auth_provider.credentials.tenant_id
+
+    @property
     def tenant_id(self):
         """The tenant/project id being used for requests
 
         :rtype: string
         :return: The tenant/project id being used for requests
         """
-        return self.auth_provider.credentials.tenant_id
+        # NOTE(ralonsoh): this property should be deprecated, reference
+        # blueprint adopt-oslo-versioned-objects-for-db.
+        versionutils.report_deprecated_feature(
+            self.LOG, '"tenant_id" property is deprecated for removal, use '
+                      '"project_id" instead')
+        return self.project_id
 
     @property
     def password(self):
@@ -547,24 +562,17 @@ class RestClient(object):
         req_url, req_headers, req_body = self.auth_provider.auth_request(
             method, url, headers, body, self.filters)
 
-        # Do the actual request, and time it
-        start = time.time()
-        self._log_request_start(method, req_url)
         resp, resp_body = self.raw_request(
             req_url, method, headers=req_headers, body=req_body,
             chunked=chunked
         )
-        end = time.time()
-        self._log_request(method, req_url, resp, secs=(end - start),
-                          req_headers=req_headers, req_body=req_body,
-                          resp_body=resp_body)
-
         # Verify HTTP response codes
         self.response_checker(method, resp, resp_body)
 
         return resp, resp_body
 
-    def raw_request(self, url, method, headers=None, body=None, chunked=False):
+    def raw_request(self, url, method, headers=None, body=None, chunked=False,
+                    log_req_body=None):
         """Send a raw HTTP request without the keystone catalog or auth
 
         This method sends a HTTP request in the same manner as the request()
@@ -580,14 +588,29 @@ class RestClient(object):
                              explicitly requires no headers use an empty dict.
         :param str body: Body to send with the request
         :param bool chunked: sends the body with chunked encoding
+        :param str log_req_body: Whether to log the request body or not.
+                                 It is default to None which means request
+                                 body is safe to log otherwise pass any string
+                                 you want to log in place of request body.
+                                 For example: '<omitted>'
         :rtype: tuple
         :return: a tuple with the first entry containing the response headers
                  and the second the response body
         """
         if headers is None:
             headers = self.get_headers()
-        return self.http_obj.request(url, method, headers=headers,
-                                     body=body, chunked=chunked)
+        # Do the actual request, and time it
+        start = time.time()
+        self._log_request_start(method, url)
+        resp, resp_body = self.http_obj.request(
+            url, method, headers=headers,
+            body=body, chunked=chunked)
+        end = time.time()
+        req_body = body if log_req_body is None else log_req_body
+        self._log_request(method, url, resp, secs=(end - start),
+                          req_headers=headers, req_body=req_body,
+                          resp_body=resp_body)
+        return resp, resp_body
 
     def request(self, method, url, extra_headers=False, headers=None,
                 body=None, chunked=False):
@@ -891,9 +914,41 @@ class RestClient(object):
                 raise exceptions.TimeoutException(message)
             time.sleep(self.build_interval)
 
+    def wait_for_resource_activation(self, id):
+        """Waits for a resource to become active
+
+        This method will loop over is_resource_active until either
+        is_resource_active returns True or the build timeout is reached. This
+        depends on is_resource_active being implemented
+
+        :param str id: The id of the resource to check
+        :raises TimeoutException: If the build_timeout has elapsed and the
+                                  resource still hasn't been active
+        """
+        start_time = int(time.time())
+        while True:
+            if self.is_resource_active(id):
+                return
+            if int(time.time()) - start_time >= self.build_timeout:
+                message = ('Failed to reach active state %(resource_type)s '
+                           '%(id)s within the required time (%(timeout)s s).' %
+                           {'resource_type': self.resource_type, 'id': id,
+                            'timeout': self.build_timeout})
+                caller = test_utils.find_test_caller()
+                if caller:
+                    message = '(%s) %s' % (caller, message)
+                raise exceptions.TimeoutException(message)
+            time.sleep(self.build_interval)
+
     def is_resource_deleted(self, id):
         """Subclasses override with specific deletion detection."""
         message = ('"%s" does not implement is_resource_deleted'
+                   % self.__class__.__name__)
+        raise NotImplementedError(message)
+
+    def is_resource_active(self, id):
+        """Subclasses override with specific active detection."""
+        message = ('"%s" does not implement is_resource_active'
                    % self.__class__.__name__)
         raise NotImplementedError(message)
 

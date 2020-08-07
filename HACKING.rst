@@ -12,7 +12,6 @@ Tempest Specific Commandments
   tempest/scenario tests
 - [T104] Scenario tests require a services decorator
 - [T105] Tests cannot use setUpClass/tearDownClass
-- [T106] vim configuration should not be kept in source files.
 - [T107] Check that a service tag isn't in the module path
 - [T108] Check no hyphen at the end of rand_name() argument
 - [T109] Cannot use testtools.skip decorator; instead use
@@ -60,7 +59,7 @@ projects not included above should go into one of the
 `relevant plugin projects`_.
 
 .. _External Plugin Interface: https://specs.openstack.org/openstack/qa-specs/specs/tempest/implemented/tempest-external-plugin-interface.html
-.. _relevant plugin projects: https://docs.openstack.org/tempest/latest/plugin-registry.html#detected-plugins
+.. _relevant plugin projects: https://docs.openstack.org/tempest/latest/plugins/plugin-registry.html#detected-plugins
 
 Exception Handling
 ------------------

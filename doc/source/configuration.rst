@@ -108,12 +108,12 @@ wanted to enable parallel execution of Tempest tests. However, this was
 insufficient for certain use cases because of the admin credentials requirement
 to create the credential sets on demand. To get around that the accounts.yaml
 file was introduced and with that a new internal credential provider to enable
-using the list of credentials instead of creating them on demand. With locking
-test accounts each test class will reserve a set of credentials from the
-accounts.yaml before executing any of its tests so that each class is isolated
-like with dynamic credentials.
+using the list of credentials instead of creating them on demand. With
+pre-provisioned credentials (also known as locking test accounts) each test
+class will reserve a set of credentials from the accounts.yaml before executing
+any of its tests so that each class is isolated like with dynamic credentials.
 
-To enable and use locking test accounts you need do a few things:
+To enable and use pre-provisioned credentials you need do a few things:
 
 #. Create an accounts.yaml file which contains the set of pre-existing
    credentials to use for testing. To make sure you don't have a credentials
@@ -193,10 +193,6 @@ those tests will be skipped.
 There are also options in the ``scenario`` section for images:
 
 #. ``img_file``
-#. ``img_dir``
-#. ``aki_img_file``
-#. ``ari_img_file``
-#. ``ami_img_file``
 #. ``img_container_format``
 #. ``img_disk_format``
 
@@ -205,13 +201,9 @@ of scenario tests which are uploading an image. These options are used to tell
 Tempest where an image file is located and describe its metadata for when it is
 uploaded.
 
-The behavior of these options is a bit convoluted (which will likely be fixed in
-future versions). You first need to specify ``img_dir``, which is the directory
-in which Tempest will look for the image files. First, it will check if the
-filename set for ``img_file`` could be found in ``img_dir``. If it is found then
-the ``img_container_format`` and ``img_disk_format`` options are used to upload
-that image to glance. However, if it is not found, Tempest will look for the
-three uec image file name options as a fallback. If neither is found, the tests
+You first need to specify full path of the image using ``img_file`` option.
+If it is found then the ``img_container_format`` and ``img_disk_format``
+options are used to upload that image to glance. If it's not found, the tests
 requiring an image to upload will fail.
 
 It is worth pointing out that using `cirros`_ is a very good choice for running

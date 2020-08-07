@@ -28,6 +28,7 @@ CONF = config.CONF
 
 class BaseAttachVolumeTest(base.BaseV2ComputeTest):
     """Base class for the attach volume tests in this module."""
+    create_default_network = True
 
     @classmethod
     def skip_checks(cls):
@@ -40,11 +41,6 @@ class BaseAttachVolumeTest(base.BaseV2ComputeTest):
     def setup_credentials(cls):
         cls.prepare_instance_network()
         super(BaseAttachVolumeTest, cls).setup_credentials()
-
-    @classmethod
-    def resource_setup(cls):
-        super(BaseAttachVolumeTest, cls).resource_setup()
-        cls.device = CONF.compute.volume_device_name
 
     def _create_server(self):
         # Start a server and wait for it to become ready
@@ -63,13 +59,17 @@ class BaseAttachVolumeTest(base.BaseV2ComputeTest):
 
 
 class AttachVolumeTestJSON(BaseAttachVolumeTest):
+    """Test attaching volume to server"""
 
     @decorators.idempotent_id('52e9045a-e90d-4c0d-9087-79d657faffff')
     # This test is conditionally marked slow if SSH validation is enabled.
     @decorators.attr(type='slow', condition=CONF.validation.run_validation)
     def test_attach_detach_volume(self):
-        # Stop and Start a server with an attached volume, ensuring that
-        # the volume remains attached.
+        """Test attaching and detaching volume from server
+
+        Stop and Start a server with an attached volume, ensuring that
+        the volume remains attached.
+        """
         server, validation_resources = self._create_server()
 
         # NOTE(andreaf) Create one remote client used throughout the test.
@@ -84,15 +84,18 @@ class AttachVolumeTestJSON(BaseAttachVolumeTest):
             # NOTE(andreaf) We need to ensure the ssh key has been
             # injected in the guest before we power cycle
             linux_client.validate_authentication()
+            disks_before_attach = linux_client.list_disks()
 
         volume = self.create_volume()
 
         # NOTE: As of the 12.0.0 Liberty release, the Nova libvirt driver
-        # no longer honors a user-supplied device name, in that case
-        # CONF.compute.volume_device_name must be set the equal value as
-        # the libvirt auto-assigned one
-        attachment = self.attach_volume(server, volume,
-                                        device=('/dev/%s' % self.device))
+        # no longer honors a user-supplied device name, and there can be
+        # a mismatch between libvirt provide disk name and actual disk name
+        # on instance, hence we no longer validate this test with the supplied
+        # device name rather we count number of disk before attach
+        # detach to validate the testcase.
+
+        attachment = self.attach_volume(server, volume)
 
         self.servers_client.stop_server(server['id'])
         waiters.wait_for_server_status(self.servers_client, server['id'],
@@ -103,9 +106,10 @@ class AttachVolumeTestJSON(BaseAttachVolumeTest):
                                        'ACTIVE')
 
         if CONF.validation.run_validation:
-            disks = linux_client.get_disks()
-            device_name_to_match = '\n' + self.device + ' '
-            self.assertIn(device_name_to_match, disks)
+            disks_after_attach = linux_client.list_disks()
+            self.assertGreater(
+                len(disks_after_attach),
+                len(disks_before_attach))
 
         self.servers_client.detach_volume(server['id'], attachment['volumeId'])
         waiters.wait_for_volume_resource_status(
@@ -120,11 +124,18 @@ class AttachVolumeTestJSON(BaseAttachVolumeTest):
                                        'ACTIVE')
 
         if CONF.validation.run_validation:
-            disks = linux_client.get_disks()
-            self.assertNotIn(device_name_to_match, disks)
+            disks_after_detach = linux_client.list_disks()
+            self.assertEqual(len(disks_before_attach), len(disks_after_detach))
 
     @decorators.idempotent_id('7fa563fe-f0f7-43eb-9e22-a1ece036b513')
     def test_list_get_volume_attachments(self):
+        """Test listing and getting volume attachments
+
+        First we attach one volume to the server, check listing and getting
+        the volume attachment of the server. Then we attach another volume to
+        the server, check listing and getting the volume attachments of the
+        server. Finally we detach the volumes from the server one by one.
+        """
         # List volume attachment of the server
         server, validation_resources = self._create_server()
         volume_1st = self.create_volume()
@@ -244,8 +255,12 @@ class AttachVolumeShelveTestJSON(BaseAttachVolumeTest):
     @decorators.attr(type='slow')
     @decorators.idempotent_id('13a940b6-3474-4c3c-b03f-29b89112bfee')
     def test_attach_volume_shelved_or_offload_server(self):
-        # Create server, count number of volumes on it, shelve
-        # server and attach pre-created volume to shelved server
+        """Test attaching volume to shelved server
+
+        Create server, count number of volumes on it, shelve
+        server and attach pre-created volume to shelved server, then
+        unshelve the server and check that attached volume exists.
+        """
         server, validation_resources = self._create_server()
         volume = self.create_volume()
         num_vol = self._count_volumes(server, validation_resources)
@@ -271,8 +286,12 @@ class AttachVolumeShelveTestJSON(BaseAttachVolumeTest):
     @decorators.attr(type='slow')
     @decorators.idempotent_id('b54e86dd-a070-49c4-9c07-59ae6dae15aa')
     def test_detach_volume_shelved_or_offload_server(self):
-        # Count number of volumes on instance, shelve
-        # server and attach pre-created volume to shelved server
+        """Test detaching volume from shelved server
+
+        Count number of volumes on server, shelve server and attach
+        pre-created volume to shelved server, then detach the volume, unshelve
+        the instance and check that we have the expected number of volume(s).
+        """
         server, validation_resources = self._create_server()
         volume = self.create_volume()
         num_vol = self._count_volumes(server, validation_resources)
@@ -291,6 +310,12 @@ class AttachVolumeShelveTestJSON(BaseAttachVolumeTest):
 
 
 class AttachVolumeMultiAttachTest(BaseAttachVolumeTest):
+    """Test attaching one volume to multiple servers
+
+    Test attaching one volume to multiple servers with compute
+    microversion greater than 2.59.
+    """
+
     min_microversion = '2.60'
     max_microversion = 'latest'
 
@@ -367,6 +392,12 @@ class AttachVolumeMultiAttachTest(BaseAttachVolumeTest):
 
     @decorators.idempotent_id('8d5853f7-56e7-4988-9b0c-48cea3c7049a')
     def test_list_get_volume_attachments_multiattach(self):
+        """Test listing and getting multiattached volume attachments
+
+        Attach a single volume to two servers, list attachments from the
+        volume and make sure the server uuids are in the list, then detach
+        the volume from servers one by one.
+        """
         # Attach a single volume to two servers.
         servers, volume, attachments = self._create_and_multiattach()
 
@@ -448,7 +479,10 @@ class AttachVolumeMultiAttachTest(BaseAttachVolumeTest):
     @testtools.skipUnless(CONF.compute_feature_enabled.resize,
                           'Resize not available.')
     def test_resize_server_with_multiattached_volume(self):
-        # Attach a single volume to multiple servers, then resize the servers
+        """Test resizing servers with multiattached volume
+
+        Attach a single volume to multiple servers, then resize the servers
+        """
         servers, volume, _ = self._create_and_multiattach()
 
         for server in servers:
